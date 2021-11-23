@@ -355,11 +355,6 @@ public final class DefaultJdbcRepositoryOperations extends AbstractSqlRepository
         return new JdbcConversionContextImpl(connection);
     }
 
-    @Override
-    protected AutoCloseable autoCloseable(PreparedStatement preparedStatement) {
-        return preparedStatement;
-    }
-
     @NonNull
     @Override
     public ExecutorAsyncOperations async() {
@@ -999,8 +994,7 @@ public final class DefaultJdbcRepositoryOperations extends AbstractSqlRepository
             previousValues = dbOperation.collectAutoPopulatedPreviousValues(persistentEntity, entity);
         }
 
-        @Override
-        protected PreparedStatement prepare(Connection connection, DBOperation dbOperation) throws SQLException {
+        private PreparedStatement prepare(Connection connection, DBOperation dbOperation) throws SQLException {
             if (StoredSqlOperation.class.isInstance(dbOperation)) {
                 ((StoredSqlOperation) dbOperation).checkForParameterToBeExpanded(persistentEntity, entity);
             }
@@ -1018,31 +1012,32 @@ public final class DefaultJdbcRepositoryOperations extends AbstractSqlRepository
         }
 
         @Override
-        protected void setParameters(OpContext<Connection, PreparedStatement> context, Connection connection, PreparedStatement stmt, DBOperation sqlOperation) {
-            sqlOperation.setParameters(context, connection, stmt, persistentEntity, entity, previousValues);
-        }
-
-        @Override
-        protected void executeUpdate(PreparedStatement stmt, DBOperation2<Integer, Integer, SQLException> fn) throws SQLException {
-            int ru = stmt.executeUpdate();
-            fn.process(1, ru);
-            rowsUpdated = ru;
-        }
-
-        @Override
-        protected void executeUpdate(PreparedStatement stmt) throws SQLException {
-            rowsUpdated = stmt.executeUpdate();
-            if (hasGeneratedId) {
-                try (ResultSet generatedKeys = stmt.getGeneratedKeys()) {
-                    if (generatedKeys.next()) {
-                        RuntimePersistentProperty<T> identity = persistentEntity.getIdentity();
-                        Object id = columnIndexResultSetReader.readDynamic(generatedKeys, 1, identity.getDataType());
-                        BeanProperty<T, Object> property = (BeanProperty<T, Object>) identity.getProperty();
-                        entity = updateEntityId(property, entity, id);
-                    } else {
-                        throw new DataAccessException("Failed to generate ID for entity: " + entity);
+        protected void executeUpdate(OpContext<Connection, PreparedStatement> context, Connection connection, DBOperation dbOperation) throws SQLException {
+            try (PreparedStatement ps = prepare(connection, dbOperation)) {
+                dbOperation.setParameters(context, connection, ps, persistentEntity, entity, previousValues);
+                rowsUpdated = ps.executeUpdate();
+                if (hasGeneratedId) {
+                    try (ResultSet generatedKeys = ps.getGeneratedKeys()) {
+                        if (generatedKeys.next()) {
+                            RuntimePersistentProperty<T> identity = persistentEntity.getIdentity();
+                            Object id = columnIndexResultSetReader.readDynamic(generatedKeys, 1, identity.getDataType());
+                            BeanProperty<T, Object> property = (BeanProperty<T, Object>) identity.getProperty();
+                            entity = updateEntityId(property, entity, id);
+                        } else {
+                            throw new DataAccessException("Failed to generate ID for entity: " + entity);
+                        }
                     }
                 }
+            }
+        }
+
+        @Override
+        protected void executeUpdate(OpContext<Connection, PreparedStatement> context, Connection connection, DBOperation dbOperation, DBOperation2<Integer, Integer, SQLException> fn) throws SQLException {
+            try (PreparedStatement ps = prepare(connection, dbOperation)) {
+                dbOperation.setParameters(context, connection, ps, persistentEntity, entity, previousValues);
+                int ru = ps.executeUpdate();
+                fn.process(1, ru);
+                rowsUpdated = ru;
             }
         }
 
@@ -1138,8 +1133,7 @@ public final class DefaultJdbcRepositoryOperations extends AbstractSqlRepository
             }
         }
 
-        @Override
-        protected PreparedStatement prepare(Connection connection, DBOperation dbOperation) throws SQLException {
+        private PreparedStatement prepare(Connection connection, DBOperation dbOperation) throws SQLException {
             if (insert) {
                 StoredSqlOperation sqlOperation = (StoredSqlOperation) dbOperation;
                 Dialect dialect = sqlOperation.getDialect();
@@ -1193,8 +1187,7 @@ public final class DefaultJdbcRepositoryOperations extends AbstractSqlRepository
             }
         }
 
-        @Override
-        protected void setParameters(OpContext<Connection, PreparedStatement> context, Connection connection, PreparedStatement stmt, DBOperation sqlOperation) throws SQLException {
+        private void setParameters(OpContext<Connection, PreparedStatement> context, Connection connection, PreparedStatement stmt, DBOperation sqlOperation) throws SQLException {
             for (Data d : entities) {
                 if (d.vetoed) {
                     continue;
@@ -1205,38 +1198,44 @@ public final class DefaultJdbcRepositoryOperations extends AbstractSqlRepository
         }
 
         @Override
-        protected void executeUpdate(PreparedStatement stmt) throws SQLException {
-            rowsUpdated = Arrays.stream(stmt.executeBatch()).sum();
-            if (hasGeneratedId) {
-                RuntimePersistentProperty<T> identity = persistentEntity.getIdentity();
-                List<Object> ids = new ArrayList<>();
-                try (ResultSet generatedKeys = stmt.getGeneratedKeys()) {
-                    while (generatedKeys.next()) {
-                        ids.add(columnIndexResultSetReader.readDynamic(generatedKeys, 1, identity.getDataType()));
+        protected void executeUpdate(OpContext<Connection, PreparedStatement> context, Connection connection, DBOperation dbOperation) throws SQLException {
+            try (PreparedStatement ps = prepare(connection, dbOperation)) {
+                setParameters(context, connection, ps, dbOperation);
+                rowsUpdated = Arrays.stream(ps.executeBatch()).sum();
+                if (hasGeneratedId) {
+                    RuntimePersistentProperty<T> identity = persistentEntity.getIdentity();
+                    List<Object> ids = new ArrayList<>();
+                    try (ResultSet generatedKeys = ps.getGeneratedKeys()) {
+                        while (generatedKeys.next()) {
+                            ids.add(columnIndexResultSetReader.readDynamic(generatedKeys, 1, identity.getDataType()));
+                        }
                     }
+                    Iterator<Object> iterator = ids.iterator();
+                    for (Data d : entities) {
+                        if (d.vetoed) {
+                            continue;
+                        }
+                        if (!iterator.hasNext()) {
+                            throw new DataAccessException("Failed to generate ID for entity: " + d.entity);
+                        } else {
+                            Object id = iterator.next();
+                            d.entity = updateEntityId((BeanProperty<T, Object>) identity.getProperty(), d.entity, id);
+                        }
+                    }
+                } else {
+                    rowsUpdated = Arrays.stream(ps.executeBatch()).sum();
                 }
-                Iterator<Object> iterator = ids.iterator();
-                for (Data d : entities) {
-                    if (d.vetoed) {
-                        continue;
-                    }
-                    if (!iterator.hasNext()) {
-                        throw new DataAccessException("Failed to generate ID for entity: " + d.entity);
-                    } else {
-                        Object id = iterator.next();
-                        d.entity = updateEntityId((BeanProperty<T, Object>) identity.getProperty(), d.entity, id);
-                    }
-                }
-            } else {
-                rowsUpdated = Arrays.stream(stmt.executeBatch()).sum();
             }
         }
 
         @Override
-        protected void executeUpdate(PreparedStatement stmt, DBOperation2<Integer, Integer, SQLException> fn) throws SQLException {
-            rowsUpdated = Arrays.stream(stmt.executeBatch()).sum();
-            int expected = (int) entities.stream().filter(d -> !d.vetoed).count();
-            fn.process(expected, rowsUpdated);
+        protected void executeUpdate(OpContext<Connection, PreparedStatement> context, Connection connection, DBOperation dbOperation, DBOperation2<Integer, Integer, SQLException> fn) throws SQLException {
+            try (PreparedStatement ps = prepare(connection, dbOperation)) {
+                setParameters(context, connection, ps, dbOperation);
+                rowsUpdated = Arrays.stream(ps.executeBatch()).sum();
+                int expected = (int) entities.stream().filter(d -> !d.vetoed).count();
+                fn.process(expected, rowsUpdated);
+            }
         }
 
         protected List<T> getEntities() {
