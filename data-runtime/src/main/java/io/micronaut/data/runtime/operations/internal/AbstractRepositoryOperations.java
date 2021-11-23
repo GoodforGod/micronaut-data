@@ -57,6 +57,7 @@ import org.slf4j.Logger;
 import java.util.AbstractMap;
 import java.util.ArrayList;
 import java.util.Collections;
+import java.util.HashSet;
 import java.util.List;
 import java.util.ListIterator;
 import java.util.Map;
@@ -237,14 +238,10 @@ public abstract class AbstractRepositoryOperations<Cnt, PS, Exc extends Exceptio
      * @param op                 The operation
      * @param <T>                The entity type
      */
-    protected <T> void persistOne(
-            Cnt connection,
-            AnnotationMetadata annotationMetadata,
-            Class<?> repositoryType,
-            DBOperation dbOperation,
-            List<Association> associations,
-            Set<Object> persisted,
-            EntityOperations<T> op) {
+    protected <T> void persistOne(Cnt connection,
+                                  DBOperation dbOperation,
+                                  EntityOperations<T> op,
+                                  OperationContext operationContext) {
         try {
             if (QUERY_LOG.isDebugEnabled()) {
                 QUERY_LOG.debug("Executing SQL Insert: {}", dbOperation.getQuery());
@@ -253,10 +250,10 @@ public abstract class AbstractRepositoryOperations<Cnt, PS, Exc extends Exceptio
             if (vetoed) {
                 return;
             }
-            op.cascadePre(Relation.Cascade.PERSIST, connection, dbOperation.dialect, annotationMetadata, repositoryType, associations, persisted);
+            op.cascadePre(Relation.Cascade.PERSIST, connection, operationContext);
             op.executeUpdate(this, connection, dbOperation);
             op.triggerPostPersist();
-            op.cascadePost(Relation.Cascade.PERSIST, connection, dbOperation.dialect, annotationMetadata, repositoryType, associations, persisted);
+            op.cascadePost(Relation.Cascade.PERSIST, connection, operationContext);
         } catch (Exception e) {
             throw new DataAccessException("SQL Error executing INSERT: " + e.getMessage(), e);
         }
@@ -276,25 +273,22 @@ public abstract class AbstractRepositoryOperations<Cnt, PS, Exc extends Exceptio
      */
     protected <T> void persistInBatch(
             Cnt connection,
-            AnnotationMetadata annotationMetadata,
-            Class<?> repositoryType,
             DBOperation dbOperation,
-            List<Association> associations,
-            Set<Object> persisted,
-            EntitiesOperations<T> op) {
+            EntitiesOperations<T> op,
+            OperationContext operationContext) {
         try {
             boolean allVetoed = op.triggerPrePersist();
             if (allVetoed) {
                 return;
             }
-            op.cascadePre(Relation.Cascade.PERSIST, connection, dbOperation.dialect, annotationMetadata, repositoryType, associations, persisted);
+            op.cascadePre(Relation.Cascade.PERSIST, connection, operationContext);
 
             if (QUERY_LOG.isDebugEnabled()) {
                 QUERY_LOG.debug("Executing Batch SQL Insert: {}", dbOperation.getQuery());
             }
             op.executeUpdate(this, connection, dbOperation);
             op.triggerPostPersist();
-            op.cascadePost(Relation.Cascade.PERSIST, connection, dbOperation.dialect, annotationMetadata, repositoryType, associations, persisted);
+            op.cascadePost(Relation.Cascade.PERSIST, connection, operationContext);
         } catch (Exception e) {
             throw new DataAccessException("SQL error executing INSERT: " + e.getMessage(), e);
         }
@@ -405,18 +399,15 @@ public abstract class AbstractRepositoryOperations<Cnt, PS, Exc extends Exceptio
      * @param <T>                The entity type
      */
     protected <T> void updateOne(Cnt connection,
-                                 AnnotationMetadata annotationMetadata,
-                                 Class<?> repositoryType,
                                  DBOperation dbOperation,
-                                 List<Association> associations,
-                                 Set<Object> persisted,
-                                 EntityOperations<T> op) {
+                                 EntityOperations<T> op,
+                                 OperationContext operationContext) {
         op.collectAutoPopulatedPreviousValues(dbOperation);
         boolean vetoed = op.triggerPreUpdate();
         if (vetoed) {
             return;
         }
-        op.cascadePre(Relation.Cascade.UPDATE, connection, dbOperation.dialect, annotationMetadata, repositoryType, associations, persisted);
+        op.cascadePre(Relation.Cascade.UPDATE, connection, operationContext);
         try {
             if (QUERY_LOG.isDebugEnabled()) {
                 QUERY_LOG.debug("Executing SQL UPDATE: {}", dbOperation.getQuery());
@@ -430,7 +421,7 @@ public abstract class AbstractRepositoryOperations<Cnt, PS, Exc extends Exceptio
                 }
             });
             op.triggerPostUpdate();
-            op.cascadePost(Relation.Cascade.UPDATE, connection, dbOperation.dialect, annotationMetadata, repositoryType, associations, persisted);
+            op.cascadePost(Relation.Cascade.UPDATE, connection, operationContext);
         } catch (OptimisticLockException ex) {
             throw ex;
         } catch (Exception e) {
@@ -451,19 +442,16 @@ public abstract class AbstractRepositoryOperations<Cnt, PS, Exc extends Exceptio
      * @param <T>                The entity type
      */
     protected <T> void updateInBatch(Cnt connection,
-                                     AnnotationMetadata annotationMetadata,
-                                     Class<?> repositoryType,
                                      DBOperation dbOperation,
-                                     List<Association> associations,
-                                     Set<Object> persisted,
-                                     EntitiesOperations<T> op) {
+                                     EntitiesOperations<T> op,
+                                     OperationContext operationContext) {
         op.collectAutoPopulatedPreviousValues(dbOperation);
         op.triggerPreUpdate();
         try {
             if (QUERY_LOG.isDebugEnabled()) {
                 QUERY_LOG.debug("Executing Batch SQL Update: {}", dbOperation.getQuery());
             }
-            op.cascadePre(Relation.Cascade.UPDATE, connection, dbOperation.dialect, annotationMetadata, repositoryType, associations, persisted);
+            op.cascadePre(Relation.Cascade.UPDATE, connection, operationContext);
             op.executeUpdate(this, connection, dbOperation, (expected, updated) -> {
                 if (QUERY_LOG.isTraceEnabled()) {
                     QUERY_LOG.trace("Update batch operation updated {} records", updated);
@@ -472,7 +460,7 @@ public abstract class AbstractRepositoryOperations<Cnt, PS, Exc extends Exceptio
                     checkOptimisticLocking(expected, updated);
                 }
             });
-            op.cascadePost(Relation.Cascade.UPDATE, connection, dbOperation.dialect, annotationMetadata, repositoryType, associations, persisted);
+            op.cascadePost(Relation.Cascade.UPDATE, connection, operationContext);
             op.triggerPostUpdate();
         } catch (OptimisticLockException ex) {
             throw ex;
@@ -516,7 +504,6 @@ public abstract class AbstractRepositoryOperations<Cnt, PS, Exc extends Exceptio
     /**
      * Cascade on the entity instance and collect cascade operations.
      *
-     * @param dialect            The dialect
      * @param annotationMetadata The annotationMetadata
      * @param repositoryType     The repositoryType
      * @param fkOnly             Is FK only
@@ -527,7 +514,7 @@ public abstract class AbstractRepositoryOperations<Cnt, PS, Exc extends Exceptio
      * @param cascadeOps         The cascade operations
      * @param <T>                The entity type
      */
-    protected <T> void cascade(Dialect dialect, AnnotationMetadata annotationMetadata, Class<?> repositoryType,
+    protected <T> void cascade(AnnotationMetadata annotationMetadata, Class<?> repositoryType,
                                boolean fkOnly,
                                Relation.Cascade cascadeType,
                                CascadeContext ctx,
@@ -541,7 +528,7 @@ public abstract class AbstractRepositoryOperations<Cnt, PS, Exc extends Exceptio
                 continue;
             }
             if (association instanceof Embedded) {
-                cascade(dialect, annotationMetadata, repositoryType, fkOnly, cascadeType, ctx.embedded(association),
+                cascade(annotationMetadata, repositoryType, fkOnly, cascadeType, ctx.embedded(association),
                         (RuntimePersistentEntity) association.getAssociatedEntity(),
                         child,
                         cascadeOps);
@@ -555,7 +542,7 @@ public abstract class AbstractRepositoryOperations<Cnt, PS, Exc extends Exceptio
                 switch (association.getKind()) {
                     case ONE_TO_ONE:
                     case MANY_TO_ONE:
-                        cascadeOps.add(new CascadeOneOp(dialect, annotationMetadata, repositoryType, ctx.relation(association), cascadeType, associatedEntity, child));
+                        cascadeOps.add(new CascadeOneOp(annotationMetadata, repositoryType, ctx.relation(association), cascadeType, associatedEntity, child));
                         continue;
                     case ONE_TO_MANY:
                     case MANY_TO_MANY:
@@ -574,7 +561,7 @@ public abstract class AbstractRepositoryOperations<Cnt, PS, Exc extends Exceptio
                             }
                             children = entities;
                         }
-                        cascadeOps.add(new CascadeManyOp(dialect, annotationMetadata, repositoryType, ctx.relation(association), cascadeType, associatedEntity, children));
+                        cascadeOps.add(new CascadeManyOp(annotationMetadata, repositoryType, ctx.relation(association), cascadeType, associatedEntity, children));
                         continue;
                     default:
                         throw new IllegalArgumentException("Cannot cascade for relation: " + association.getKind());
@@ -588,7 +575,6 @@ public abstract class AbstractRepositoryOperations<Cnt, PS, Exc extends Exceptio
      *
      * @param connection     The connection
      * @param repositoryType The repositoryType
-     * @param dialect        The dialect
      * @param association    The association
      * @param parent         The parent
      * @param op             The operation
@@ -885,30 +871,20 @@ public abstract class AbstractRepositoryOperations<Cnt, PS, Exc extends Exceptio
          *
          * @param cascadeType        The cascade type
          * @param cnt                The connection
-         * @param dialect            The dialect
-         * @param annotationMetadata The annotation metadata
-         * @param repositoryType     The repository type
-         * @param associations       The associations leading to the entity
-         * @param persisted          The set containing previously processed values
          */
-        protected abstract void cascadePre(Relation.Cascade cascadeType,
-                                           Cnt cnt, Dialect dialect, AnnotationMetadata annotationMetadata, Class<?> repositoryType,
-                                           List<Association> associations, Set<Object> persisted);
+        protected abstract void cascadePre(Relation.Cascade cascadeType, Cnt connection, OperationContext operationContext);
 
         /**
          * Cascade post operation.
          *
          * @param cascadeType        The cascade type
          * @param cnt                The connection
-         * @param dialect            The dialect
          * @param annotationMetadata The annotation metadata
          * @param repositoryType     The repository type
          * @param associations       The associations leading to the entity
          * @param persisted          The set containing previously processed values
          */
-        protected abstract void cascadePost(Relation.Cascade cascadeType,
-                                            Cnt cnt, Dialect dialect, AnnotationMetadata annotationMetadata, Class<?> repositoryType,
-                                            List<Association> associations, Set<Object> persisted);
+        protected abstract void cascadePost(Relation.Cascade cascadeType, Cnt cnt, OperationContext operationContext);
 
         /**
          * Collect auto populated values before pre-triggers modifies them.
@@ -1052,16 +1028,17 @@ public abstract class AbstractRepositoryOperations<Cnt, PS, Exc extends Exceptio
     @SuppressWarnings("VisibilityModifier")
     protected abstract static class CascadeOp {
 
-        public final Dialect dialect;
         public final AnnotationMetadata annotationMetadata;
         public final Class<?> repositoryType;
         public final CascadeContext ctx;
         public final Relation.Cascade cascadeType;
         public final RuntimePersistentEntity<Object> childPersistentEntity;
 
-        CascadeOp(Dialect dialect, AnnotationMetadata annotationMetadata, Class<?> repositoryType,
-                  CascadeContext ctx, Relation.Cascade cascadeType, RuntimePersistentEntity<Object> childPersistentEntity) {
-            this.dialect = dialect;
+        CascadeOp(AnnotationMetadata annotationMetadata,
+                  Class<?> repositoryType,
+                  CascadeContext ctx,
+                  Relation.Cascade cascadeType,
+                  RuntimePersistentEntity<Object> childPersistentEntity) {
             this.annotationMetadata = annotationMetadata;
             this.repositoryType = repositoryType;
             this.ctx = ctx;
@@ -1078,9 +1055,9 @@ public abstract class AbstractRepositoryOperations<Cnt, PS, Exc extends Exceptio
 
         public final Object child;
 
-        CascadeOneOp(Dialect dialect, AnnotationMetadata annotationMetadata, Class<?> repositoryType,
+        CascadeOneOp(AnnotationMetadata annotationMetadata, Class<?> repositoryType,
                      CascadeContext ctx, Relation.Cascade cascadeType, RuntimePersistentEntity<Object> childPersistentEntity, Object child) {
-            super(dialect, annotationMetadata, repositoryType, ctx, cascadeType, childPersistentEntity);
+            super(annotationMetadata, repositoryType, ctx, cascadeType, childPersistentEntity);
             this.child = child;
         }
     }
@@ -1093,10 +1070,10 @@ public abstract class AbstractRepositoryOperations<Cnt, PS, Exc extends Exceptio
 
         public final Iterable<Object> children;
 
-        CascadeManyOp(Dialect dialect, AnnotationMetadata annotationMetadata, Class<?> repositoryType,
+        CascadeManyOp(AnnotationMetadata annotationMetadata, Class<?> repositoryType,
                       CascadeContext ctx, Relation.Cascade cascadeType, RuntimePersistentEntity<Object> childPersistentEntity,
                       Iterable<Object> children) {
-            super(dialect, annotationMetadata, repositoryType, ctx, cascadeType, childPersistentEntity);
+            super(annotationMetadata, repositoryType, ctx, cascadeType, childPersistentEntity);
             this.children = children;
         }
     }
@@ -1166,6 +1143,20 @@ public abstract class AbstractRepositoryOperations<Cnt, PS, Exc extends Exceptio
             return CollectionUtils.last(associations);
         }
 
+    }
+
+    protected static class OperationContext {
+        public final AnnotationMetadata annotationMetadata;
+        public final Class<?> repositoryType;
+        public final List<Association> associations = Collections.emptyList();
+        public final Set<Object> persisted = new HashSet<>(5);
+        public final Dialect dialect;
+
+        public OperationContext(AnnotationMetadata annotationMetadata, Class<?> repositoryType, Dialect dialect) {
+            this.annotationMetadata = annotationMetadata;
+            this.repositoryType = repositoryType;
+            this.dialect = dialect;
+        }
     }
 
 }
