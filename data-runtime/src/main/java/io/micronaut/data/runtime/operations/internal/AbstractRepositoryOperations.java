@@ -230,28 +230,20 @@ public abstract class AbstractRepositoryOperations<Cnt, PS, Exc extends Exceptio
      * Persist one operation.
      *
      * @param connection         The connection
-     * @param annotationMetadata The annotationMetadata
-     * @param repositoryType     The repositoryType
-     * @param dbOperation        The db operation
-     * @param associations       The associations
-     * @param persisted          Already persisted values
      * @param op                 The operation
      * @param <T>                The entity type
      */
-    protected <T> void persistOne(Cnt connection,
-                                  DBOperation dbOperation,
-                                  EntityOperations<T> op,
-                                  OperationContext operationContext) {
+    protected <T> void persistOne(Cnt connection, EntityOperations<T> op, OperationContext operationContext) {
         try {
             if (QUERY_LOG.isDebugEnabled()) {
-                QUERY_LOG.debug("Executing SQL Insert: {}", dbOperation.getQuery());
+                QUERY_LOG.debug("Executing SQL Insert: {}", op.debug());
             }
             boolean vetoed = op.triggerPrePersist();
             if (vetoed) {
                 return;
             }
             op.cascadePre(Relation.Cascade.PERSIST, connection, operationContext);
-            op.executeUpdate(this, connection, dbOperation);
+            op.executeUpdate(this, connection);
             op.triggerPostPersist();
             op.cascadePost(Relation.Cascade.PERSIST, connection, operationContext);
         } catch (Exception e) {
@@ -263,17 +255,11 @@ public abstract class AbstractRepositoryOperations<Cnt, PS, Exc extends Exceptio
      * Persist batch operation.
      *
      * @param connection         The connection
-     * @param annotationMetadata The annotationMetadata
-     * @param repositoryType     The repositoryType
-     * @param dbOperation        The db operation
-     * @param associations       The associations
-     * @param persisted          Already persisted values
      * @param op                 The operation
      * @param <T>                The entity type
      */
     protected <T> void persistInBatch(
             Cnt connection,
-            DBOperation dbOperation,
             EntitiesOperations<T> op,
             OperationContext operationContext) {
         try {
@@ -284,9 +270,9 @@ public abstract class AbstractRepositoryOperations<Cnt, PS, Exc extends Exceptio
             op.cascadePre(Relation.Cascade.PERSIST, connection, operationContext);
 
             if (QUERY_LOG.isDebugEnabled()) {
-                QUERY_LOG.debug("Executing Batch SQL Insert: {}", dbOperation.getQuery());
+                QUERY_LOG.debug("Executing Batch SQL Insert: {}", op.debug());
             }
-            op.executeUpdate(this, connection, dbOperation);
+            op.executeUpdate(this, connection);
             op.triggerPostPersist();
             op.cascadePost(Relation.Cascade.PERSIST, connection, operationContext);
         } catch (Exception e) {
@@ -321,11 +307,10 @@ public abstract class AbstractRepositoryOperations<Cnt, PS, Exc extends Exceptio
      *
      * @param connection  The connection
      * @param op          The entity operation
-     * @param dbOperation The db operation
      * @param <T>         The entity type
      */
-    protected <T> void deleteOne(Cnt connection, EntityOperations<T> op, DBOperation dbOperation) {
-        op.collectAutoPopulatedPreviousValues(dbOperation);
+    protected <T> void deleteOne(Cnt connection, EntityOperations<T> op) {
+        op.collectAutoPopulatedPreviousValues();
         boolean vetoed = op.triggerPreRemove();
         if (vetoed) {
             // operation vetoed
@@ -333,13 +318,13 @@ public abstract class AbstractRepositoryOperations<Cnt, PS, Exc extends Exceptio
         }
         try {
             if (QUERY_LOG.isDebugEnabled()) {
-                QUERY_LOG.debug("Executing SQL DELETE: {}", dbOperation.getQuery());
+                QUERY_LOG.debug("Executing SQL DELETE: {}", op.debug());
             }
-            op.executeUpdate(this, connection, dbOperation, (entries, deleted) -> {
+            op.executeUpdate(this, connection, (entries, deleted) -> {
                 if (QUERY_LOG.isTraceEnabled()) {
                     QUERY_LOG.trace("Delete operation deleted {} records", deleted);
                 }
-                if (dbOperation.isOptimisticLock()) {
+                if (op.getDbOperation().isOptimisticLock()) {
                     checkOptimisticLocking(entries, deleted);
                 }
             });
@@ -360,7 +345,7 @@ public abstract class AbstractRepositoryOperations<Cnt, PS, Exc extends Exceptio
      * @param <T>         The entity type
      */
     protected <T> void deleteInBatch(Cnt connection, EntitiesOperations<T> op, DBOperation dbOperation) {
-        op.collectAutoPopulatedPreviousValues(dbOperation);
+        op.collectAutoPopulatedPreviousValues();
         boolean vetoed = op.triggerPreRemove();
         if (vetoed) {
             // operation vetoed
@@ -368,9 +353,9 @@ public abstract class AbstractRepositoryOperations<Cnt, PS, Exc extends Exceptio
         }
         try {
             if (QUERY_LOG.isDebugEnabled()) {
-                QUERY_LOG.debug("Executing Batch SQL DELETE: {}", dbOperation.getQuery());
+                QUERY_LOG.debug("Executing Batch SQL DELETE: {}", op.debug());
             }
-            op.executeUpdate(this, connection, dbOperation, (entries, deleted) -> {
+            op.executeUpdate(this, connection, (entries, deleted) -> {
                 if (QUERY_LOG.isTraceEnabled()) {
                     QUERY_LOG.trace("Delete operation deleted {} records", deleted);
                 }
@@ -390,19 +375,13 @@ public abstract class AbstractRepositoryOperations<Cnt, PS, Exc extends Exceptio
      * Update one operation.
      *
      * @param connection         The connection
-     * @param annotationMetadata The annotationMetadata
-     * @param repositoryType     The repositoryType
-     * @param dbOperation        The sql operation
-     * @param associations       The associations
-     * @param persisted          Already persisted values
      * @param op                 The operation
      * @param <T>                The entity type
      */
     protected <T> void updateOne(Cnt connection,
-                                 DBOperation dbOperation,
                                  EntityOperations<T> op,
                                  OperationContext operationContext) {
-        op.collectAutoPopulatedPreviousValues(dbOperation);
+        op.collectAutoPopulatedPreviousValues();
         boolean vetoed = op.triggerPreUpdate();
         if (vetoed) {
             return;
@@ -410,13 +389,13 @@ public abstract class AbstractRepositoryOperations<Cnt, PS, Exc extends Exceptio
         op.cascadePre(Relation.Cascade.UPDATE, connection, operationContext);
         try {
             if (QUERY_LOG.isDebugEnabled()) {
-                QUERY_LOG.debug("Executing SQL UPDATE: {}", dbOperation.getQuery());
+                QUERY_LOG.debug("Executing SQL UPDATE: {}", op.debug());
             }
-            op.executeUpdate(this, connection, dbOperation, (entries, rowsUpdated) -> {
+            op.executeUpdate(this, connection, (entries, rowsUpdated) -> {
                 if (QUERY_LOG.isTraceEnabled()) {
                     QUERY_LOG.trace("Update operation updated {} records", rowsUpdated);
                 }
-                if (dbOperation.isOptimisticLock()) {
+                if (op.getDbOperation().isOptimisticLock()) {
                     checkOptimisticLocking(entries, rowsUpdated);
                 }
             });
@@ -433,30 +412,24 @@ public abstract class AbstractRepositoryOperations<Cnt, PS, Exc extends Exceptio
      * Update batch operation.
      *
      * @param connection         The connection
-     * @param annotationMetadata The annotationMetadata
-     * @param repositoryType     The repositoryType
-     * @param dbOperation        The db operation
-     * @param associations       The associations
-     * @param persisted          Already persisted values
      * @param op                 The operation
      * @param <T>                The entity type
      */
     protected <T> void updateInBatch(Cnt connection,
-                                     DBOperation dbOperation,
                                      EntitiesOperations<T> op,
                                      OperationContext operationContext) {
-        op.collectAutoPopulatedPreviousValues(dbOperation);
+        op.collectAutoPopulatedPreviousValues();
         op.triggerPreUpdate();
         try {
             if (QUERY_LOG.isDebugEnabled()) {
-                QUERY_LOG.debug("Executing Batch SQL Update: {}", dbOperation.getQuery());
+                QUERY_LOG.debug("Executing Batch SQL Update: {}", op.debug());
             }
             op.cascadePre(Relation.Cascade.UPDATE, connection, operationContext);
-            op.executeUpdate(this, connection, dbOperation, (expected, updated) -> {
+            op.executeUpdate(this, connection, (expected, updated) -> {
                 if (QUERY_LOG.isTraceEnabled()) {
                     QUERY_LOG.trace("Update batch operation updated {} records", updated);
                 }
-                if (dbOperation.isOptimisticLock()) {
+                if (op.getDbOperation().isOptimisticLock()) {
                     checkOptimisticLocking(expected, updated);
                 }
             });
@@ -571,31 +544,6 @@ public abstract class AbstractRepositoryOperations<Cnt, PS, Exc extends Exceptio
     }
 
     /**
-     * Persist join table assocation.
-     *
-     * @param connection     The connection
-     * @param repositoryType The repositoryType
-     * @param association    The association
-     * @param parent         The parent
-     * @param op             The operation
-     * @param <T>            The entity type
-     */
-    protected <T> void persistJoinTableAssociation(Cnt connection,
-                                                   Class<?> repositoryType,
-                                                   Dialect dialect,
-                                                   Association association,
-                                                   Object parent,
-                                                   BaseOperations<T> op) {
-        RuntimePersistentEntity<Object> entity = getEntity((Class<Object>) parent.getClass());
-        DBOperation dbInsertOperation = resolveSqlInsertAssociation(repositoryType, dialect, (RuntimeAssociation) association, entity, parent);
-        try {
-            op.executeUpdate(this, connection, dbInsertOperation);
-        } catch (Exception e) {
-            throw new DataAccessException("SQL error executing INSERT: " + e.getMessage(), e);
-        }
-    }
-
-    /**
      * Builds a join table insert.
      *
      * @param repositoryType   The repository type
@@ -609,7 +557,7 @@ public abstract class AbstractRepositoryOperations<Cnt, PS, Exc extends Exceptio
             RuntimePersistentEntity<T> persistentEntity,
             RuntimeAssociation<T> association);
 
-    private <T> DBOperation resolveSqlInsertAssociation(Class<?> repositoryType, Dialect dialect, RuntimeAssociation<T> association, RuntimePersistentEntity<T> persistentEntity, T entity) {
+    protected <T> DBOperation resolveSqlInsertAssociation(Class<?> repositoryType, Dialect dialect, RuntimeAssociation<T> association, RuntimePersistentEntity<T> persistentEntity, T entity) {
         String sqlInsert = resolveAssociationInsert(repositoryType, persistentEntity, association);
         return new DBOperation(sqlInsert, dialect) {
 
@@ -866,11 +814,14 @@ public abstract class AbstractRepositoryOperations<Cnt, PS, Exc extends Exceptio
             this.persistentEntity = persistentEntity;
         }
 
+        protected abstract DBOperation getDbOperation();
+
+        protected abstract String debug();
+
         /**
          * Cascade pre operation.
          *
          * @param cascadeType        The cascade type
-         * @param cnt                The connection
          */
         protected abstract void cascadePre(Relation.Cascade cascadeType, Cnt connection, OperationContext operationContext);
 
@@ -879,40 +830,32 @@ public abstract class AbstractRepositoryOperations<Cnt, PS, Exc extends Exceptio
          *
          * @param cascadeType        The cascade type
          * @param cnt                The connection
-         * @param annotationMetadata The annotation metadata
-         * @param repositoryType     The repository type
-         * @param associations       The associations leading to the entity
-         * @param persisted          The set containing previously processed values
          */
         protected abstract void cascadePost(Relation.Cascade cascadeType, Cnt cnt, OperationContext operationContext);
 
         /**
          * Collect auto populated values before pre-triggers modifies them.
-         *
-         * @param dbOperation The db operation
          */
-        protected abstract void collectAutoPopulatedPreviousValues(DBOperation dbOperation);
+        protected abstract void collectAutoPopulatedPreviousValues();
 
         /**
          * Execute update and process entities modified and rows executed.
          *
          * @param context     The context
          * @param connection  The connection
-         * @param dbOperation The db operation
          * @param fn          The affected rows consumer
          * @throws Exc The exception
          */
-        protected abstract void executeUpdate(OpContext<Cnt, PS> context, Cnt connection, DBOperation dbOperation, DBOperation2<Integer, Integer, Exc> fn) throws Exc;
+        protected abstract void executeUpdate(OpContext<Cnt, PS> context, Cnt connection, DBOperation2<Integer, Integer, Exc> fn) throws Exc;
 
         /**
          * Execute update.
          *
          * @param context     The context
          * @param connection  The connection
-         * @param dbOperation The db operation
          * @throws Exc The exception
          */
-        protected abstract void executeUpdate(OpContext<Cnt, PS> context, Cnt connection, DBOperation dbOperation) throws Exc;
+        protected abstract void executeUpdate(OpContext<Cnt, PS> context, Cnt connection) throws Exc;
 
         /**
          * Veto an entity.
