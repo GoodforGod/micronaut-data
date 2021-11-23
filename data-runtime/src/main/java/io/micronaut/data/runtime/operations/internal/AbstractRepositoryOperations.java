@@ -140,19 +140,6 @@ public abstract class AbstractRepositoryOperations<Cnt, PS, Exc extends Exceptio
     protected abstract AutoCloseable autoCloseable(PS ps);
 
     /**
-     * Prepare a statement and run a function.
-     *
-     * @param connection     The connection
-     * @param dialect        The dialect
-     * @param identity       The identity property
-     * @param hasGeneratedID Is genereted idenntity
-     * @param insertSql      Te query
-     * @param fn             The function to be run with a statement
-     * @throws Exc The exception type
-     */
-    protected abstract void prepareStatement(Cnt connection, Dialect dialect, PersistentProperty identity, boolean hasGeneratedID, String insertSql, DBOperation1<PS, Exc> fn) throws Exc;
-
-    /**
      * Process after a child element has been cascaded.
      *
      * @param entity       The parent entity.
@@ -251,7 +238,7 @@ public abstract class AbstractRepositoryOperations<Cnt, PS, Exc extends Exceptio
      * @param connection         The connection
      * @param annotationMetadata The annotationMetadata
      * @param repositoryType     The repositoryType
-     * @param sqlOperation       The sql operation
+     * @param dbOperation        The db operation
      * @param associations       The associations
      * @param persisted          Already persisted values
      * @param op                 The operation
@@ -261,30 +248,26 @@ public abstract class AbstractRepositoryOperations<Cnt, PS, Exc extends Exceptio
             Cnt connection,
             AnnotationMetadata annotationMetadata,
             Class<?> repositoryType,
-            DBOperation sqlOperation,
+            DBOperation dbOperation,
             List<Association> associations,
             Set<Object> persisted,
             EntityOperations<T> op) {
         try {
-            boolean hasGeneratedID = op.persistentEntity.getIdentity() != null && op.persistentEntity.getIdentity().isGenerated();
             if (QUERY_LOG.isDebugEnabled()) {
-                QUERY_LOG.debug("Executing SQL Insert: {}", sqlOperation.getQuery());
+                QUERY_LOG.debug("Executing SQL Insert: {}", dbOperation.getQuery());
             }
             boolean vetoed = op.triggerPrePersist();
             if (vetoed) {
                 return;
             }
-            op.cascadePre(Relation.Cascade.PERSIST, connection, sqlOperation.dialect, annotationMetadata, repositoryType, associations, persisted);
-            prepareStatement(connection, sqlOperation.getDialect(), op.persistentEntity.getIdentity(), hasGeneratedID, sqlOperation.getQuery(), stmt -> {
-                op.setParameters(this, connection, stmt, sqlOperation);
-                if (hasGeneratedID) {
-                    op.executeUpdateSetGeneratedId(stmt);
-                } else {
-                    op.executeUpdate(stmt);
-                }
-            });
+            op.cascadePre(Relation.Cascade.PERSIST, connection, dbOperation.dialect, annotationMetadata, repositoryType, associations, persisted);
+            PS ps = op.prepare(connection, dbOperation);
+            try (AutoCloseable ignore = autoCloseable(ps)) {
+                op.setParameters(this, connection, ps, dbOperation);
+                op.executeUpdate(ps);
+            }
             op.triggerPostPersist();
-            op.cascadePost(Relation.Cascade.PERSIST, connection, sqlOperation.dialect, annotationMetadata, repositoryType, associations, persisted);
+            op.cascadePost(Relation.Cascade.PERSIST, connection, dbOperation.dialect, annotationMetadata, repositoryType, associations, persisted);
         } catch (Exception e) {
             throw new DataAccessException("SQL Error executing INSERT: " + e.getMessage(), e);
         }
@@ -296,7 +279,7 @@ public abstract class AbstractRepositoryOperations<Cnt, PS, Exc extends Exceptio
      * @param connection         The connection
      * @param annotationMetadata The annotationMetadata
      * @param repositoryType     The repositoryType
-     * @param sqlOperation       The sql operation
+     * @param dbOperation        The db operation
      * @param associations       The associations
      * @param persisted          Already persisted values
      * @param op                 The operation
@@ -306,30 +289,27 @@ public abstract class AbstractRepositoryOperations<Cnt, PS, Exc extends Exceptio
             Cnt connection,
             AnnotationMetadata annotationMetadata,
             Class<?> repositoryType,
-            DBOperation sqlOperation,
+            DBOperation dbOperation,
             List<Association> associations,
             Set<Object> persisted,
             EntitiesOperations<T> op) {
-        boolean hasGeneratedID = op.persistentEntity.getIdentity() != null && op.persistentEntity.getIdentity().isGenerated();
         try {
             boolean allVetoed = op.triggerPrePersist();
             if (allVetoed) {
                 return;
             }
-            op.cascadePre(Relation.Cascade.PERSIST, connection, sqlOperation.dialect, annotationMetadata, repositoryType, associations, persisted);
-            prepareStatement(connection, sqlOperation.getDialect(), op.persistentEntity.getIdentity(), hasGeneratedID, sqlOperation.getQuery(), stmt -> {
+            op.cascadePre(Relation.Cascade.PERSIST, connection, dbOperation.dialect, annotationMetadata, repositoryType, associations, persisted);
+
+            PS ps = op.prepare(connection, dbOperation);
+            try (AutoCloseable ignore = autoCloseable(ps)) {
                 if (QUERY_LOG.isDebugEnabled()) {
-                    QUERY_LOG.debug("Executing Batch SQL Insert: {}", sqlOperation.getQuery());
+                    QUERY_LOG.debug("Executing Batch SQL Insert: {}", dbOperation.getQuery());
                 }
-                op.setParameters(this, connection, stmt, sqlOperation);
-                if (hasGeneratedID) {
-                    op.executeUpdateSetGeneratedId(stmt);
-                } else {
-                    op.executeUpdate(stmt);
-                }
-            });
+                op.setParameters(this, connection, ps, dbOperation);
+                op.executeUpdate(ps);
+            }
             op.triggerPostPersist();
-            op.cascadePost(Relation.Cascade.PERSIST, connection, sqlOperation.dialect, annotationMetadata, repositoryType, associations, persisted);
+            op.cascadePost(Relation.Cascade.PERSIST, connection, dbOperation.dialect, annotationMetadata, repositoryType, associations, persisted);
         } catch (Exception e) {
             throw new DataAccessException("SQL error executing INSERT: " + e.getMessage(), e);
         }
@@ -968,9 +948,9 @@ public abstract class AbstractRepositoryOperations<Cnt, PS, Exc extends Exceptio
         /**
          * Collect auto populated values before pre-triggers modifies them.
          *
-         * @param sqlOperation The sql operation
+         * @param dbOperation The db operation
          */
-        protected abstract void collectAutoPopulatedPreviousValues(DBOperation sqlOperation);
+        protected abstract void collectAutoPopulatedPreviousValues(DBOperation dbOperation);
 
         /**
          * Prepares the statement.
@@ -988,10 +968,10 @@ public abstract class AbstractRepositoryOperations<Cnt, PS, Exc extends Exceptio
          * @param context      The context
          * @param connection   The connection
          * @param stmt         The statement
-         * @param sqlOperation The sql operation
+         * @param dbOperation  The db operation
          * @throws Exc The exception type
          */
-        protected abstract void setParameters(OpContext<Cnt, PS> context, Cnt connection, PS stmt, DBOperation sqlOperation) throws Exc;
+        protected abstract void setParameters(OpContext<Cnt, PS> context, Cnt connection, PS stmt, DBOperation dbOperation) throws Exc;
 
         /**
          * Execute update and process entities modified and rows executed.
@@ -1009,14 +989,6 @@ public abstract class AbstractRepositoryOperations<Cnt, PS, Exc extends Exceptio
          * @throws Exc The exception type
          */
         protected abstract void executeUpdate(PS stmt) throws Exc;
-
-        /**
-         * Execute update and update generated id.
-         *
-         * @param stmt The statement
-         * @throws Exc The exception type
-         */
-        protected abstract void executeUpdateSetGeneratedId(PS stmt) throws Exc;
 
         /**
          * Veto an entity.

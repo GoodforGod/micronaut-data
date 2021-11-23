@@ -14,7 +14,21 @@ pluginManagement {
 }
 
 plugins {
-    id 'io.micronaut.build.shared.settings' version '4.1.4'
+    id 'io.micronaut.build.shared.settings' version '4.2.6'
+}
+
+enableFeaturePreview("VERSION_CATALOGS")
+enableFeaturePreview("TYPESAFE_PROJECT_ACCESSORS")
+
+dependencyResolutionManagement {
+    repositories {
+        mavenCentral()
+    }
+    versionCatalogs {
+        "mn" {
+            from("io.micronaut:micronaut-bom:${providers.gradleProperty("micronautVersion").get()}")
+        }
+    }
 }
 
 rootProject.name = 'data'
@@ -33,6 +47,7 @@ include 'data-hibernate-jpa'
 include 'data-tx-hibernate'
 include 'data-jdbc'
 include 'data-r2dbc'
+include 'data-mongodb'
 
 // Spring compatibility
 include 'data-spring'

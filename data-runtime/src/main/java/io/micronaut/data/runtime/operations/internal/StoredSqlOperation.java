@@ -296,4 +296,7 @@ public class StoredSqlOperation extends DBOperation {
         return 1;
     }
 
+    public SqlQueryBuilder getQueryBuilder() {
+        return queryBuilder;
+    }
 }
