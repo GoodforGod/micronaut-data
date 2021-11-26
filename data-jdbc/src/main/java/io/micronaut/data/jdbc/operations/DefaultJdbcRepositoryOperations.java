@@ -207,8 +207,8 @@ public final class DefaultJdbcRepositoryOperations extends AbstractSqlRepository
                     if (LOG.isDebugEnabled()) {
                         LOG.debug("Cascading PERSIST for '{}' association: '{}'", persistentEntity.getName(), cascadeOp.ctx.associations);
                     }
-                    DBOperation childSqlPersistOperation = resolveEntityInsert(operationContext.annotationMetadata, operationContext.repositoryType, child.getClass(), childPersistentEntity);
-                    JdbcEntityOperations<Object> op = new JdbcEntityOperations<>(childSqlPersistOperation, childPersistentEntity, child, true);
+                    JdbcEntityOperations<Object> op = createPersistEntityOperation(operationContext, childPersistentEntity, child);
+
                     persistOne(connection, op, operationContext);
                     entity = afterCascadedOne(entity, cascadeOp.ctx.associations, child, op.entity);
                     child = op.entity;

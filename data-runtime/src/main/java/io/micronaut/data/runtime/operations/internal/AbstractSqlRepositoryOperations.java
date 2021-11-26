@@ -34,6 +34,7 @@ import io.micronaut.data.model.query.builder.sql.Dialect;
 import io.micronaut.data.model.query.builder.sql.SqlQueryBuilder;
 import io.micronaut.data.model.runtime.AttributeConverterRegistry;
 import io.micronaut.data.model.runtime.PreparedQuery;
+import io.micronaut.data.model.runtime.QueryParameterBinding;
 import io.micronaut.data.model.runtime.RuntimeAssociation;
 import io.micronaut.data.model.runtime.RuntimeEntityRegistry;
 import io.micronaut.data.model.runtime.RuntimePersistentEntity;
@@ -309,6 +310,35 @@ public abstract class AbstractSqlRepositoryOperations<Cnt, RS, PS, Exc extends E
 
             return new QueryResultSqlOperation(queryBuilder, queryResult);
         });
+    }
+
+    protected <T> DBOperation resolveSqlInsertAssociation(Class<?> repositoryType, Dialect dialect, RuntimeAssociation<T> association, RuntimePersistentEntity<T> persistentEntity, T entity) {
+        String sqlInsert = resolveAssociationInsert(repositoryType, persistentEntity, association);
+        return new DBOperation(sqlInsert, dialect) {
+
+            @Override
+            public <T, Cnt, PS> void setParameters(OpContext<Cnt, PS> context, Cnt connection, PS ps, RuntimePersistentEntity<T> pe, T e, Map<QueryParameterBinding, Object> previousValues) {
+                int i = 0;
+                for (Map.Entry<PersistentProperty, Object> property : idPropertiesWithValues(persistentEntity.getIdentity(), entity).collect(Collectors.toList())) {
+                    Object value = context.convert(connection, property.getValue(), (RuntimePersistentProperty<?>) property.getKey());
+                    context.setStatementParameter(
+                            ps,
+                            shiftIndex(i++),
+                            property.getKey().getDataType(),
+                            value,
+                            dialect);
+                }
+                for (Map.Entry<PersistentProperty, Object> property : idPropertiesWithValues(pe.getIdentity(), e).collect(Collectors.toList())) {
+                    Object value = context.convert(connection, property.getValue(), (RuntimePersistentProperty<?>) property.getKey());
+                    context.setStatementParameter(
+                            ps,
+                            shiftIndex(i++),
+                            property.getKey().getDataType(),
+                            value,
+                            dialect);
+                }
+            }
+        };
     }
 
     /**

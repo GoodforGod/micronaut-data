@@ -18,6 +18,7 @@ package io.micronaut.data.mongodb.annotation;
 import io.micronaut.data.annotation.Repository;
 import io.micronaut.data.annotation.RepositoryConfiguration;
 import io.micronaut.data.model.query.builder.sql.SqlQueryBuilder;
+import io.micronaut.data.mongodb.operations.MongoDbRepositoryOperations;
 
 import java.lang.annotation.Documented;
 import java.lang.annotation.ElementType;
@@ -34,7 +35,7 @@ import java.lang.annotation.Target;
 @RepositoryConfiguration(
         queryBuilder = SqlQueryBuilder.class,
         operations = MongoDbRepositoryOperations.class,
-        implicitQueries = false,
+        implicitQueries = true,
         namedParameters = false
 )
 @Retention(RetentionPolicy.RUNTIME)

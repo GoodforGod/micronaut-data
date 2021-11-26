@@ -40,7 +40,6 @@ import io.micronaut.data.model.PersistentPropertyPath;
 import io.micronaut.data.model.query.JoinPath;
 import io.micronaut.data.model.query.builder.sql.Dialect;
 import io.micronaut.data.model.runtime.AttributeConverterRegistry;
-import io.micronaut.data.model.runtime.QueryParameterBinding;
 import io.micronaut.data.model.runtime.RuntimeAssociation;
 import io.micronaut.data.model.runtime.RuntimeEntityRegistry;
 import io.micronaut.data.model.runtime.RuntimePersistentEntity;
@@ -66,14 +65,12 @@ import java.util.concurrent.ConcurrentHashMap;
 import java.util.function.Consumer;
 import java.util.function.Function;
 import java.util.function.Predicate;
-import java.util.stream.Collectors;
 import java.util.stream.Stream;
 
 /**
  * Abstract SQL repository implementation not specifically bound to JDBC.
  *
  * @param <Cnt> The connection type
- * @param <PS>  The prepared statement type
  * @param <Exc> The exception type
  * @author Denis Stepanov
  * @since 3.1.0
@@ -543,50 +540,7 @@ public abstract class AbstractRepositoryOperations<Cnt, PS, Exc extends Exceptio
         }
     }
 
-    /**
-     * Builds a join table insert.
-     *
-     * @param repositoryType   The repository type
-     * @param persistentEntity The entity
-     * @param association      The association
-     * @param <T>              The entity generic type
-     * @return The insert statement
-     */
-    protected abstract <T> String resolveAssociationInsert(
-            Class repositoryType,
-            RuntimePersistentEntity<T> persistentEntity,
-            RuntimeAssociation<T> association);
-
-    protected <T> DBOperation resolveSqlInsertAssociation(Class<?> repositoryType, Dialect dialect, RuntimeAssociation<T> association, RuntimePersistentEntity<T> persistentEntity, T entity) {
-        String sqlInsert = resolveAssociationInsert(repositoryType, persistentEntity, association);
-        return new DBOperation(sqlInsert, dialect) {
-
-            @Override
-            public <T, Cnt, PS> void setParameters(OpContext<Cnt, PS> context, Cnt connection, PS ps, RuntimePersistentEntity<T> pe, T e, Map<QueryParameterBinding, Object> previousValues) {
-                int i = 0;
-                for (Map.Entry<PersistentProperty, Object> property : idPropertiesWithValues(persistentEntity.getIdentity(), entity).collect(Collectors.toList())) {
-                    Object value = context.convert(connection, property.getValue(), (RuntimePersistentProperty<?>) property.getKey());
-                    context.setStatementParameter(
-                            ps,
-                            shiftIndex(i++),
-                            property.getKey().getDataType(),
-                            value,
-                            dialect);
-                }
-                for (Map.Entry<PersistentProperty, Object> property : idPropertiesWithValues(pe.getIdentity(), e).collect(Collectors.toList())) {
-                    Object value = context.convert(connection, property.getValue(), (RuntimePersistentProperty<?>) property.getKey());
-                    context.setStatementParameter(
-                            ps,
-                            shiftIndex(i++),
-                            property.getKey().getDataType(),
-                            value,
-                            dialect);
-                }
-            }
-        };
-    }
-
-    private Stream<Map.Entry<PersistentProperty, Object>> idPropertiesWithValues(PersistentProperty property, Object value) {
+    protected Stream<Map.Entry<PersistentProperty, Object>> idPropertiesWithValues(PersistentProperty property, Object value) {
         Object propertyValue = ((RuntimePersistentProperty) property).getProperty().get(value);
         if (property instanceof Embedded) {
             Embedded embedded = (Embedded) property;
