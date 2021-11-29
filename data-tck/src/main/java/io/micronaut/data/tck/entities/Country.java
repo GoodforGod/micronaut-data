@@ -16,6 +16,7 @@
 package io.micronaut.data.tck.entities;
 
 import io.micronaut.data.annotation.*;
+import org.bson.codecs.pojo.annotations.BsonId;
 
 import java.util.Set;
 import java.util.UUID;
@@ -23,6 +24,7 @@ import java.util.UUID;
 @MappedEntity
 public class Country {
 
+    @BsonId
     @Id
     @AutoPopulated
     private UUID uuid;

@@ -1,4 +1,16 @@
+repositories {
+    mavenCentral()
+    maven { url "https://s01.oss.sonatype.org/content/repositories/snapshots/" }
+}
+
+configurations.all {
+    resolutionStrategy.cacheChangingModulesFor 0, 'seconds'
+}
+
 dependencies {
+    annotationProcessor("io.micronaut.serde:micronaut-serde-processor:1.0.0-SNAPSHOT")
+    implementation "io.micronaut.serde:micronaut-serde-bson:1.0.0-SNAPSHOT"
+
     annotationProcessor mn.micronaut.inject.java
     annotationProcessor mn.micronaut.graal
     annotationProcessor "io.micronaut.docs:micronaut-docs-asciidoc-config-props:$micronautDocsVersion"
