@@ -142,7 +142,7 @@ public class DefaultMongoDbRepositoryOperations extends AbstractRepositoryOperat
                 }
             };
 
-            persistOne(clientSession, op, new OperationContext(operation.getAnnotationMetadata(), operation.getRepositoryType(), Dialect.ANSI));
+            persistOneSync(clientSession, op, new OperationContext(operation.getAnnotationMetadata(), operation.getRepositoryType(), Dialect.ANSI));
 
             return op.getEntity();
         }

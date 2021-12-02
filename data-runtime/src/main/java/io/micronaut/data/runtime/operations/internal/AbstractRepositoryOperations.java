@@ -39,6 +39,7 @@ import io.micronaut.data.model.PersistentProperty;
 import io.micronaut.data.model.PersistentPropertyPath;
 import io.micronaut.data.model.query.JoinPath;
 import io.micronaut.data.model.query.builder.sql.Dialect;
+import io.micronaut.data.model.query.builder.sql.SqlQueryBuilder;
 import io.micronaut.data.model.runtime.AttributeConverterRegistry;
 import io.micronaut.data.model.runtime.RuntimeAssociation;
 import io.micronaut.data.model.runtime.RuntimeEntityRegistry;
@@ -52,6 +53,7 @@ import io.micronaut.data.runtime.event.DefaultEntityEventContext;
 import io.micronaut.http.MediaType;
 import io.micronaut.http.codec.MediaTypeCodec;
 import org.slf4j.Logger;
+import org.slf4j.LoggerFactory;
 
 import java.util.AbstractMap;
 import java.util.ArrayList;
@@ -79,6 +81,7 @@ import java.util.stream.Stream;
 @Internal
 public abstract class AbstractRepositoryOperations<Cnt, PS, Exc extends Exception>
         implements ApplicationContextProvider, OpContext<Cnt, PS> {
+    protected static final Logger LOG = LoggerFactory.getLogger(AbstractRepositoryOperations.class);
     protected static final Logger QUERY_LOG = DataSettings.QUERY_LOG;
     protected final MediaTypeCodec jsonCodec;
     protected final EntityEventListener<Object> entityEventRegistry;
@@ -128,6 +131,171 @@ public abstract class AbstractRepositoryOperations<Cnt, PS, Exc extends Exceptio
     @Override
     public RuntimeEntityRegistry getRuntimeEntityRegistry() {
         return runtimeEntityRegistry;
+    }
+
+    protected <T> SyncEntityOperations<T> persistOneOp(Cnt cnt, RuntimePersistentEntity<T> persistentEntity, T value, OperationContext operationContext) {
+        throw new IllegalStateException();
+    }
+
+    protected <T> SyncEntitiesOperations<T> persistBatchOp(Cnt cnt, RuntimePersistentEntity<T> persistentEntity, Iterable<T> values, OperationContext operationContext) {
+        throw new IllegalStateException();
+    }
+
+    protected <T> SyncEntityOperations<T> updateOneOp(Cnt cnt, RuntimePersistentEntity<T> persistentEntity, T value, OperationContext operationContext) {
+        throw new IllegalStateException();
+    }
+
+    private Object persistOneSync(Cnt cnt, Object child, RuntimePersistentEntity<Object> childPersistentEntity, OperationContext operationContext) {
+        SyncEntityOperations<Object> persistOneOp = persistOneOp(cnt, childPersistentEntity, child, operationContext);
+        persistOneSync(cnt, persistOneOp, operationContext);
+        return persistOneOp.getEntity();
+    }
+
+    private List<Object> persistBatchSync(Cnt cnt, Iterable<Object> values,
+                                          RuntimePersistentEntity<Object> childPersistentEntity,
+                                          Predicate<Object> predicate,
+                                          OperationContext operationContext) {
+        SyncEntitiesOperations<Object> persistBatchOp = persistBatchOp(cnt, childPersistentEntity, values, operationContext);
+        persistBatchOp.veto(predicate);
+        persistInBatch(cnt, persistBatchOp, operationContext);
+        return persistBatchOp.getEntities();
+    }
+
+    private Object updateOneSync(Cnt cnt, Object child, RuntimePersistentEntity<Object> childPersistentEntity, OperationContext operationContext) {
+        SyncEntityOperations<Object> updateOneOp = updateOneOp(cnt, childPersistentEntity, child, operationContext);
+        updateOneSync(cnt, updateOneOp, operationContext);
+        return updateOneOp.getEntity();
+    }
+
+    protected void persistManyAssociationSync(Cnt cnt,
+                                              RuntimeAssociation runtimeAssociation,
+                                              Object value, RuntimePersistentEntity<Object> persistentEntity,
+                                              Object child, RuntimePersistentEntity<Object> childPersistentEntity,
+                                              OperationContext operationContext) {
+        throw new IllegalStateException();
+    }
+
+    protected void persistManyAssociationBatchSync(Cnt cnt,
+                                                   RuntimeAssociation runtimeAssociation,
+                                                   Object value, RuntimePersistentEntity<Object> persistentEntity,
+                                                   Iterable<Object> child, RuntimePersistentEntity<Object> childPersistentEntity,
+                                                   OperationContext operationContext) {
+        throw new IllegalStateException();
+    }
+
+    protected <T> T cascadeEntity(Cnt cnt,
+                                  T entity,
+                                  RuntimePersistentEntity<T> persistentEntity,
+                                  boolean isPost,
+                                  Relation.Cascade cascadeType,
+                                  OperationContext operationContext) {
+        List<CascadeOp> cascadeOps = new ArrayList<>();
+        cascade(operationContext.annotationMetadata, operationContext.repositoryType,
+                isPost, cascadeType,
+                AbstractSqlRepositoryOperations.CascadeContext.of(operationContext.associations, entity),
+                persistentEntity, entity, cascadeOps);
+        for (CascadeOp cascadeOp : cascadeOps) {
+            if (cascadeOp instanceof CascadeOneOp) {
+                CascadeOneOp cascadeOneOp = (CascadeOneOp) cascadeOp;
+                RuntimePersistentEntity<Object> childPersistentEntity = cascadeOp.childPersistentEntity;
+                Object child = cascadeOneOp.child;
+                if (operationContext.persisted.contains(child)) {
+                    continue;
+                }
+                boolean hasId = childPersistentEntity.getIdentity().getProperty().get(child) != null;
+                if (!hasId && (cascadeType == Relation.Cascade.PERSIST)) {
+                    if (LOG.isDebugEnabled()) {
+                        LOG.debug("Cascading PERSIST for '{}' association: '{}'", persistentEntity.getName(), cascadeOp.ctx.associations);
+                    }
+                    Object persisted = persistOneSync(cnt, child, childPersistentEntity, operationContext);
+                    entity = afterCascadedOne(entity, cascadeOp.ctx.associations, child, persisted);
+                    child = persisted;
+                } else if (hasId && (cascadeType == Relation.Cascade.UPDATE)) {
+                    if (LOG.isDebugEnabled()) {
+                        LOG.debug("Cascading MERGE for '{}' ({}) association: '{}'", persistentEntity.getName(),
+                                persistentEntity.getIdentity().getProperty().get(entity), cascadeOp.ctx.associations);
+                    }
+                    Object updated = updateOneSync(cnt, child, childPersistentEntity, operationContext);
+                    entity = afterCascadedOne(entity, cascadeOp.ctx.associations, child, updated);
+                    child = updated;
+                }
+                RuntimeAssociation<Object> association = (RuntimeAssociation) cascadeOp.ctx.getAssociation();
+                if (!hasId
+                        && (cascadeType == Relation.Cascade.PERSIST || cascadeType == Relation.Cascade.UPDATE)
+                        && SqlQueryBuilder.isForeignKeyWithJoinTable(association)) {
+
+                    RuntimePersistentEntity<Object> runtimePersistent = getEntity((Class<Object>) entity.getClass());
+                    persistManyAssociationSync(cnt, association, entity, runtimePersistent, child, childPersistentEntity, operationContext);
+                }
+                operationContext.persisted.add(child);
+            } else if (cascadeOp instanceof CascadeManyOp) {
+                CascadeManyOp cascadeManyOp = (CascadeManyOp) cascadeOp;
+                RuntimePersistentEntity<Object> childPersistentEntity = cascadeManyOp.childPersistentEntity;
+
+                List<Object> entities;
+                if (cascadeType == Relation.Cascade.UPDATE) {
+                    entities = CollectionUtils.iterableToList(cascadeManyOp.children);
+                    for (ListIterator<Object> iterator = entities.listIterator(); iterator.hasNext(); ) {
+                        Object child = iterator.next();
+                        if (operationContext.persisted.contains(child)) {
+                            continue;
+                        }
+                        RuntimePersistentProperty<Object> identity = childPersistentEntity.getIdentity();
+                        Object value;
+                        if (identity.getProperty().get(child) == null) {
+                            value = persistOneSync(cnt, child, childPersistentEntity, operationContext);
+                        } else {
+                            value = updateOneSync(cnt, child, childPersistentEntity, operationContext);
+                        }
+                        iterator.set(value);
+                    }
+                } else if (cascadeType == Relation.Cascade.PERSIST) {
+                    if (isSupportsBatchInsert(childPersistentEntity, operationContext.dialect)) {
+                        RuntimePersistentProperty<Object> identity = childPersistentEntity.getIdentity();
+                        Predicate<Object> veto = val -> operationContext.persisted.contains(val) || identity.getProperty().get(val) != null;
+                        entities = persistBatchSync(cnt, cascadeManyOp.children, childPersistentEntity, veto, operationContext);
+                    } else {
+                        entities = CollectionUtils.iterableToList(cascadeManyOp.children);
+                        for (ListIterator<Object> iterator = entities.listIterator(); iterator.hasNext(); ) {
+                            Object child = iterator.next();
+                            if (operationContext.persisted.contains(child)) {
+                                continue;
+                            }
+                            RuntimePersistentProperty<Object> identity = childPersistentEntity.getIdentity();
+                            if (identity.getProperty().get(child) != null) {
+                                continue;
+                            }
+                            Object persisted = persistOneSync(cnt, child, childPersistentEntity, operationContext);
+                            iterator.set(persisted);
+                        }
+                    }
+                } else {
+                    continue;
+                }
+
+                entity = afterCascadedMany(entity, cascadeOp.ctx.associations, cascadeManyOp.children, entities);
+
+                RuntimeAssociation<Object> association = (RuntimeAssociation) cascadeOp.ctx.getAssociation();
+                if (SqlQueryBuilder.isForeignKeyWithJoinTable(association) && !entities.isEmpty()) {
+                    if (operationContext.dialect.allowBatch()) {
+                        Object parent = cascadeOp.ctx.parent;
+                        RuntimePersistentEntity<Object> runtimePersistent = getEntity((Class<Object>) parent.getClass());
+                        persistManyAssociationBatchSync(cnt, association, parent, runtimePersistent, entities, childPersistentEntity, operationContext);
+                    } else {
+                        for (Object e : cascadeManyOp.children) {
+                            if (operationContext.persisted.contains(e)) {
+                                continue;
+                            }
+                            Object parent = cascadeOp.ctx.parent;
+                            RuntimePersistentEntity<Object> runtimePersistent = getEntity((Class<Object>) parent.getClass());
+                            persistManyAssociationSync(cnt, association, parent, runtimePersistent, e, childPersistentEntity, operationContext);
+                        }
+                    }
+                }
+                operationContext.persisted.addAll(entities);
+            }
+        }
+        return entity;
     }
 
     /**
@@ -226,11 +394,11 @@ public abstract class AbstractRepositoryOperations<Cnt, PS, Exc extends Exceptio
     /**
      * Persist one operation.
      *
-     * @param connection         The connection
-     * @param op                 The operation
-     * @param <T>                The entity type
+     * @param connection The connection
+     * @param op         The operation
+     * @param <T>        The entity type
      */
-    protected <T> void persistOne(Cnt connection, EntityOperations<T> op, OperationContext operationContext) {
+    protected <T> void persistOneSync(Cnt connection, EntityOperations<T> op, OperationContext operationContext) {
         try {
             if (QUERY_LOG.isDebugEnabled()) {
                 QUERY_LOG.debug("Executing SQL Insert: {}", op.debug());
@@ -251,9 +419,9 @@ public abstract class AbstractRepositoryOperations<Cnt, PS, Exc extends Exceptio
     /**
      * Persist batch operation.
      *
-     * @param connection         The connection
-     * @param op                 The operation
-     * @param <T>                The entity type
+     * @param connection The connection
+     * @param op         The operation
+     * @param <T>        The entity type
      */
     protected <T> void persistInBatch(
             Cnt connection,
@@ -302,9 +470,9 @@ public abstract class AbstractRepositoryOperations<Cnt, PS, Exc extends Exceptio
     /**
      * Delete one operation.
      *
-     * @param connection  The connection
-     * @param op          The entity operation
-     * @param <T>         The entity type
+     * @param connection The connection
+     * @param op         The entity operation
+     * @param <T>        The entity type
      */
     protected <T> void deleteOne(Cnt connection, EntityOperations<T> op) {
         op.collectAutoPopulatedPreviousValues();
@@ -371,13 +539,13 @@ public abstract class AbstractRepositoryOperations<Cnt, PS, Exc extends Exceptio
     /**
      * Update one operation.
      *
-     * @param connection         The connection
-     * @param op                 The operation
-     * @param <T>                The entity type
+     * @param connection The connection
+     * @param op         The operation
+     * @param <T>        The entity type
      */
-    protected <T> void updateOne(Cnt connection,
-                                 EntityOperations<T> op,
-                                 OperationContext operationContext) {
+    protected <T> void updateOneSync(Cnt connection,
+                                     EntityOperations<T> op,
+                                     OperationContext operationContext) {
         op.collectAutoPopulatedPreviousValues();
         boolean vetoed = op.triggerPreUpdate();
         if (vetoed) {
@@ -408,9 +576,9 @@ public abstract class AbstractRepositoryOperations<Cnt, PS, Exc extends Exceptio
     /**
      * Update batch operation.
      *
-     * @param connection         The connection
-     * @param op                 The operation
-     * @param <T>                The entity type
+     * @param connection The connection
+     * @param op         The operation
+     * @param <T>        The entity type
      */
     protected <T> void updateInBatch(Cnt connection,
                                      EntitiesOperations<T> op,
@@ -724,6 +892,45 @@ public abstract class AbstractRepositoryOperations<Cnt, PS, Exc extends Exceptio
      *
      * @param <T> The entity type
      */
+    protected abstract class SyncEntityOperations<T> extends EntityOperations<T> {
+
+        /**
+         * Create a new instance.
+         *
+         * @param persistentEntity The RuntimePersistentEntity
+         */
+        protected SyncEntityOperations(RuntimePersistentEntity<T> persistentEntity) {
+            super(persistentEntity);
+        }
+
+        public abstract T getEntity();
+
+    }
+
+    /**
+     * The entities operations container.
+     *
+     * @param <T> The entity type
+     */
+    protected abstract class SyncEntitiesOperations<T> extends EntitiesOperations<T> {
+
+        /**
+         * Create a new instance.
+         *
+         * @param persistentEntity The RuntimePersistentEntity
+         */
+        protected SyncEntitiesOperations(RuntimePersistentEntity<T> persistentEntity) {
+            super(persistentEntity);
+        }
+
+        public abstract List<T> getEntities();
+    }
+
+    /**
+     * The entity operations container.
+     *
+     * @param <T> The entity type
+     */
     protected abstract class EntityOperations<T> extends BaseOperations<T> {
 
         /**
@@ -775,15 +982,15 @@ public abstract class AbstractRepositoryOperations<Cnt, PS, Exc extends Exceptio
         /**
          * Cascade pre operation.
          *
-         * @param cascadeType        The cascade type
+         * @param cascadeType The cascade type
          */
         protected abstract void cascadePre(Relation.Cascade cascadeType, Cnt connection, OperationContext operationContext);
 
         /**
          * Cascade post operation.
          *
-         * @param cascadeType        The cascade type
-         * @param cnt                The connection
+         * @param cascadeType The cascade type
+         * @param cnt         The connection
          */
         protected abstract void cascadePost(Relation.Cascade cascadeType, Cnt cnt, OperationContext operationContext);
 
@@ -795,9 +1002,9 @@ public abstract class AbstractRepositoryOperations<Cnt, PS, Exc extends Exceptio
         /**
          * Execute update and process entities modified and rows executed.
          *
-         * @param context     The context
-         * @param connection  The connection
-         * @param fn          The affected rows consumer
+         * @param context    The context
+         * @param connection The connection
+         * @param fn         The affected rows consumer
          * @throws Exc The exception
          */
         protected abstract void executeUpdate(OpContext<Cnt, PS> context, Cnt connection, DBOperation2<Integer, Integer, Exc> fn) throws Exc;
@@ -805,8 +1012,8 @@ public abstract class AbstractRepositoryOperations<Cnt, PS, Exc extends Exceptio
         /**
          * Execute update.
          *
-         * @param context     The context
-         * @param connection  The connection
+         * @param context    The context
+         * @param connection The connection
          * @throws Exc The exception
          */
         protected abstract void executeUpdate(OpContext<Cnt, PS> context, Cnt connection) throws Exc;
