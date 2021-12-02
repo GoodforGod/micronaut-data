@@ -70,6 +70,9 @@ import io.micronaut.data.runtime.operations.AsyncFromReactiveAsyncRepositoryOper
 import io.micronaut.data.runtime.operations.internal.AbstractSqlRepositoryOperations;
 import io.micronaut.data.runtime.operations.internal.DBOperation;
 import io.micronaut.data.runtime.operations.internal.OpContext;
+import io.micronaut.data.runtime.operations.internal.ReactiveCascadeOperations;
+import io.micronaut.data.runtime.operations.internal.ReactiveEntitiesOperations;
+import io.micronaut.data.runtime.operations.internal.ReactiveEntityOperations;
 import io.micronaut.data.runtime.operations.internal.StoredQuerySqlOperation;
 import io.micronaut.data.runtime.operations.internal.StoredSqlOperation;
 import io.micronaut.data.runtime.support.AbstractConversionContext;
@@ -121,13 +124,16 @@ import java.util.stream.Stream;
  */
 @EachBean(ConnectionFactory.class)
 @Internal
-final class DefaultR2dbcRepositoryOperations extends AbstractSqlRepositoryOperations<Connection, Row, Statement, RuntimeException> implements BlockingReactorRepositoryOperations, R2dbcRepositoryOperations, R2dbcOperations, ReactiveTransactionOperations<Connection> {
+final class DefaultR2dbcRepositoryOperations extends AbstractSqlRepositoryOperations<Connection, Row, Statement, RuntimeException>
+        implements BlockingReactorRepositoryOperations, R2dbcRepositoryOperations, R2dbcOperations,
+        ReactiveTransactionOperations<Connection>, ReactiveCascadeOperations.ReactiveCascadeOperationsHelper<Connection> {
     private static final Logger LOG = LoggerFactory.getLogger(DefaultR2dbcRepositoryOperations.class);
     private final ConnectionFactory connectionFactory;
     private final ReactorReactiveRepositoryOperations reactiveOperations;
     private final String dataSourceName;
     private ExecutorService executorService;
     private AsyncRepositoryOperations asyncRepositoryOperations;
+    private ReactiveCascadeOperations<Connection> cascadeOperations;
 
     /**
      * Default constructor.
@@ -167,37 +173,45 @@ final class DefaultR2dbcRepositoryOperations extends AbstractSqlRepositoryOperat
         this.executorService = executorService;
         this.reactiveOperations = new DefaultR2dbcReactiveRepositoryOperations();
         this.dataSourceName = dataSourceName;
+        this.cascadeOperations = new ReactiveCascadeOperations<>(conversionService, this);
     }
 
     @Override
-    protected <T> ReactiveEntityOperations<T> persistOneReactiveOp(Connection connection, RuntimePersistentEntity<T> persistentEntity, T value, OperationContext operationContext) {
+    public <T> Mono<T> persistOneSync(Connection connection, T value, RuntimePersistentEntity<T> persistentEntity, OperationContext operationContext) {
         DBOperation childSqlPersistOperation = resolveEntityInsert(operationContext.annotationMetadata, operationContext.repositoryType, value.getClass(), persistentEntity);
-        return new R2dbcEntityOperations<>(childSqlPersistOperation, persistentEntity, value, true);
+        R2dbcEntityOperations<T> op = new R2dbcEntityOperations<>(childSqlPersistOperation, persistentEntity, value, true);
+        persistOneSync(connection, op, operationContext);
+        return op.getEntity();
     }
 
     @Override
-    protected <T> ReactiveEntitiesOperations<T> persistBatchReactiveOp(Connection connection, RuntimePersistentEntity<T> persistentEntity, Iterable<T> values, OperationContext operationContext) {
+    public Flux<Object> persistBatchReactive(Connection connection, Iterable<Object> values, RuntimePersistentEntity<Object> persistentEntity, Predicate<Object> predicate, OperationContext operationContext) {
         DBOperation childSqlPersistOperation = resolveEntityInsert(
                 operationContext.annotationMetadata,
                 operationContext.repositoryType,
                 persistentEntity.getIntrospection().getBeanType(),
                 persistentEntity
         );
-        return new R2dbcEntitiesOperations<>(childSqlPersistOperation, persistentEntity, values, true);
+        R2dbcEntitiesOperations<Object> op = new R2dbcEntitiesOperations<>(childSqlPersistOperation, persistentEntity, values, true);
+        op.veto(predicate);
+        persistInBatch(connection, op, operationContext);
+        return op.getEntities();
     }
 
     @Override
-    protected <T> ReactiveEntityOperations<T> updateOneReactiveOp(Connection connection, RuntimePersistentEntity<T> persistentEntity, T value, OperationContext operationContext) {
+    public Mono<Object> updateOneReactive(Connection connection, Object value, RuntimePersistentEntity<Object> persistentEntity, OperationContext operationContext) {
         DBOperation childSqlUpdateOperation = resolveEntityUpdate(operationContext.annotationMetadata, operationContext.repositoryType, value.getClass(), persistentEntity);
-        return new R2dbcEntityOperations<>(persistentEntity, value, childSqlUpdateOperation);
+        ReactiveEntityOperations<Object> updateOneOp = new R2dbcEntityOperations<>(persistentEntity, value, childSqlUpdateOperation);
+        updateOneSync(connection, updateOneOp, operationContext);
+        return updateOneOp.getEntity();
     }
 
     @Override
-    protected Mono<Void> persistManyAssociationReactive(Connection connection,
-                                                        RuntimeAssociation runtimeAssociation,
-                                                        Object value, RuntimePersistentEntity<Object> persistentEntity,
-                                                        Object child, RuntimePersistentEntity<Object> childPersistentEntity,
-                                                        OperationContext operationContext) {
+    public Mono<Void> persistManyAssociationReactive(Connection connection,
+                                                     RuntimeAssociation runtimeAssociation,
+                                                     Object value, RuntimePersistentEntity<Object> persistentEntity,
+                                                     Object child, RuntimePersistentEntity<Object> childPersistentEntity,
+                                                     OperationContext operationContext) {
         DBOperation dbInsertOperation = resolveSqlInsertAssociation(operationContext.repositoryType, operationContext.dialect, runtimeAssociation, persistentEntity, value);
         R2dbcEntityOperations<Object> assocEntityOp = new R2dbcEntityOperations<>(childPersistentEntity, child, dbInsertOperation);
         try {
@@ -209,12 +223,12 @@ final class DefaultR2dbcRepositoryOperations extends AbstractSqlRepositoryOperat
     }
 
     @Override
-    protected Mono<Void> persistManyAssociationBatchReactive(Connection connection,
-                                                             RuntimeAssociation runtimeAssociation,
-                                                             Object value, RuntimePersistentEntity<Object> persistentEntity,
-                                                             Iterable<Object> child, RuntimePersistentEntity<Object> childPersistentEntity,
-                                                             Predicate<Object> veto,
-                                                             OperationContext operationContext) {
+    public Mono<Void> persistManyAssociationBatchReactive(Connection connection,
+                                                          RuntimeAssociation runtimeAssociation,
+                                                          Object value, RuntimePersistentEntity<Object> persistentEntity,
+                                                          Iterable<Object> child, RuntimePersistentEntity<Object> childPersistentEntity,
+                                                          Predicate<Object> veto,
+                                                          OperationContext operationContext) {
         DBOperation dbInsertOperation = resolveSqlInsertAssociation(operationContext.repositoryType, operationContext.dialect, runtimeAssociation, persistentEntity, value);
         R2dbcEntitiesOperations<Object> assocEntitiesOp = new R2dbcEntitiesOperations<>(childPersistentEntity, child, dbInsertOperation);
         assocEntitiesOp.veto(veto);
@@ -946,7 +960,7 @@ final class DefaultR2dbcRepositoryOperations extends AbstractSqlRepositoryOperat
                 if (d.vetoed) {
                     return Mono.just(d);
                 }
-                Mono<T> entity = cascadeEntityReactive(connection, d.entity, persistentEntity, isPost, cascadeType, operationContext);
+                Mono<T> entity = cascadeOperations.cascadeEntity(connection, d.entity, persistentEntity, isPost, cascadeType, operationContext);
                 return entity.map(e -> {
                     d.entity = e;
                     return d;
@@ -1170,7 +1184,7 @@ final class DefaultR2dbcRepositoryOperations extends AbstractSqlRepositoryOperat
                 if (d.vetoed) {
                     return Mono.just(d);
                 }
-                Mono<T> entity = cascadeEntityReactive(connection, d.entity, persistentEntity, isPost, cascadeType, operationContext);
+                Mono<T> entity = cascadeOperations.cascadeEntity(connection, d.entity, persistentEntity, isPost, cascadeType, operationContext);
                 return entity.map(e -> {
                     d.entity = e;
                     return d;
