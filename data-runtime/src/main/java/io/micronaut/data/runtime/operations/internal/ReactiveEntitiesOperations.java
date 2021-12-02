@@ -10,7 +10,7 @@ import reactor.core.publisher.Flux;
  *
  * @param <T> The entity type
  */
-abstract class ReactiveEntitiesOperations<T, Exc extends Exception> extends EntitiesOperations<T, Exc> {
+public abstract class ReactiveEntitiesOperations<T, Exc extends Exception> extends EntitiesOperations<T, Exc> {
 
     public ReactiveEntitiesOperations(EntityEventListener<Object> entityEventListener, RuntimePersistentEntity<T> persistentEntity, ConversionService<?> conversionService) {
         super(entityEventListener, persistentEntity, conversionService);

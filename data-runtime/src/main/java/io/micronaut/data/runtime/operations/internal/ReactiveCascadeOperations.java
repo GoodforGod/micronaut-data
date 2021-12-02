@@ -54,7 +54,7 @@ public class ReactiveCascadeOperations<Ctx extends OperationContext> extends Abs
                     if (LOG.isDebugEnabled()) {
                         LOG.debug("Cascading PERSIST for '{}' association: '{}'", persistentEntity.getName(), cascadeOp.ctx.associations);
                     }
-                    Mono<Object> persisted = helper.persistOneSync(ctx, child, childPersistentEntity);
+                    Mono<Object> persisted = helper.persistOne(ctx, child, childPersistentEntity);
                     entity = entity.flatMap(e -> persisted.map(persistedEntity -> afterCascadedOne(e, cascadeOp.ctx.associations, child, persistedEntity)));
                     childMono = persisted;
                 } else if (hasId && (cascadeType == Relation.Cascade.UPDATE)) {
@@ -62,7 +62,7 @@ public class ReactiveCascadeOperations<Ctx extends OperationContext> extends Abs
                         LOG.debug("Cascading MERGE for '{}' ({}) association: '{}'", persistentEntity.getName(),
                                 persistentEntity.getIdentity().getProperty().get(en), cascadeOp.ctx.associations);
                     }
-                    Mono<Object> updated = helper.updateOneReactive(ctx, child, childPersistentEntity);
+                    Mono<Object> updated = helper.updateOne(ctx, child, childPersistentEntity);
                     entity = entity.flatMap(e -> updated.map(updatedEntity -> afterCascadedOne(e, cascadeOp.ctx.associations, child, updatedEntity)));
                     childMono = updated;
                 } else {
@@ -77,7 +77,7 @@ public class ReactiveCascadeOperations<Ctx extends OperationContext> extends Abs
                             return Mono.just(e);
                         }
                         ctx.persisted.add(c);
-                        Mono<Void> op = helper.persistManyAssociationReactive(ctx, association, e, (RuntimePersistentEntity<Object>) persistentEntity, c, childPersistentEntity);
+                        Mono<Void> op = helper.persistManyAssociation(ctx, association, e, (RuntimePersistentEntity<Object>) persistentEntity, c, childPersistentEntity);
                         return op.thenReturn(e);
                     }));
                 } else {
@@ -102,21 +102,21 @@ public class ReactiveCascadeOperations<Ctx extends OperationContext> extends Abs
                         }
                         Mono<Object> modifiedEntity;
                         if (childPersistentEntity.getIdentity().getProperty().get(child) == null) {
-                            modifiedEntity = helper.persistOneSync(ctx, child, childPersistentEntity);
+                            modifiedEntity = helper.persistOne(ctx, child, childPersistentEntity);
                         } else {
-                            modifiedEntity = helper.updateOneReactive(ctx, child, childPersistentEntity);
+                            modifiedEntity = helper.updateOne(ctx, child, childPersistentEntity);
                         }
                         childrenFlux = childrenFlux.concatWith(modifiedEntity);
                     }
                     children = childrenFlux.collectList();
                 } else if (cascadeType == Relation.Cascade.PERSIST) {
-                    if (helper.supportsBatch(persistentEntity)) {
+                    if (helper.supportsBatch(ctx, persistentEntity)) {
                         if (LOG.isDebugEnabled()) {
                             LOG.debug("Cascading PERSIST for '{}' association: '{}'", persistentEntity.getName(), cascadeOp.ctx.associations);
                         }
                         RuntimePersistentProperty<Object> identity = childPersistentEntity.getIdentity();
                         Predicate<Object> veto = val -> ctx.persisted.contains(val) || identity.getProperty().get(val) != null;
-                        Flux<Object> inserted = helper.persistBatchReactive(ctx, cascadeManyOp.children, childPersistentEntity, veto);
+                        Flux<Object> inserted = helper.persistBatch(ctx, cascadeManyOp.children, childPersistentEntity, veto);
                         children = inserted.collectList();
                     } else {
                         if (LOG.isDebugEnabled()) {
@@ -129,7 +129,7 @@ public class ReactiveCascadeOperations<Ctx extends OperationContext> extends Abs
                                 childrenFlux = childrenFlux.concatWith(Mono.just(child));
                                 continue;
                             }
-                            Mono<Object> persisted = helper.persistOneSync(ctx, child, childPersistentEntity);
+                            Mono<Object> persisted = helper.persistOne(ctx, child, childPersistentEntity);
                             childrenFlux = childrenFlux.concatWith(persisted);
                         }
                         children = childrenFlux.collectList();
@@ -143,7 +143,7 @@ public class ReactiveCascadeOperations<Ctx extends OperationContext> extends Abs
                     if (SqlQueryBuilder.isForeignKeyWithJoinTable(association)) {
                         if (ctx.dialect.allowBatch()) {
                             Predicate<Object> veto = ctx.persisted::contains;
-                            Mono<Void> op = helper.persistManyAssociationBatchReactive(ctx, association, cascadeOp.ctx.parent, cascadeOp.ctx.parentPersistentEntity, newChildren, childPersistentEntity, veto);
+                            Mono<Void> op = helper.persistManyAssociationBatch(ctx, association, cascadeOp.ctx.parent, cascadeOp.ctx.parentPersistentEntity, newChildren, childPersistentEntity, veto);
                             return op.thenReturn(entityAfterCascade);
                         } else {
                             Mono<T> res = Mono.just(entityAfterCascade);
@@ -151,7 +151,7 @@ public class ReactiveCascadeOperations<Ctx extends OperationContext> extends Abs
                                 if (ctx.persisted.contains(child)) {
                                     continue;
                                 }
-                                Mono<Void> op = helper.persistManyAssociationReactive(ctx, association, cascadeOp.ctx.parent, cascadeOp.ctx.parentPersistentEntity, child, childPersistentEntity);
+                                Mono<Void> op = helper.persistManyAssociation(ctx, association, cascadeOp.ctx.parent, cascadeOp.ctx.parentPersistentEntity, child, childPersistentEntity);
                                 res = res.flatMap(op::thenReturn);
                             }
                             return res;
@@ -168,26 +168,26 @@ public class ReactiveCascadeOperations<Ctx extends OperationContext> extends Abs
 
     public interface ReactiveCascadeOperationsHelper<Ctx extends OperationContext> {
 
-        boolean supportsBatch(RuntimePersistentEntity<?> persistentEntity);
+        boolean supportsBatch(Ctx ctx, RuntimePersistentEntity<?> persistentEntity);
 
-        <T> Mono<T> persistOneSync(Ctx ctx, T value, RuntimePersistentEntity<T> persistentEntity);
+        <T> Mono<T> persistOne(Ctx ctx, T value, RuntimePersistentEntity<T> persistentEntity);
 
-        Flux<Object> persistBatchReactive(Ctx ctx, Iterable<Object> values,
-                                          RuntimePersistentEntity<Object> childPersistentEntity,
-                                          Predicate<Object> predicate);
+        Flux<Object> persistBatch(Ctx ctx, Iterable<Object> values,
+                                  RuntimePersistentEntity<Object> childPersistentEntity,
+                                  Predicate<Object> predicate);
 
-        Mono<Object> updateOneReactive(Ctx ctx, Object child, RuntimePersistentEntity<Object> childPersistentEntity);
+        Mono<Object> updateOne(Ctx ctx, Object child, RuntimePersistentEntity<Object> childPersistentEntity);
 
-        Mono<Void> persistManyAssociationReactive(Ctx ctx,
-                                                  RuntimeAssociation runtimeAssociation,
-                                                  Object value, RuntimePersistentEntity<Object> persistentEntity,
-                                                  Object child, RuntimePersistentEntity<Object> childPersistentEntity);
+        Mono<Void> persistManyAssociation(Ctx ctx,
+                                          RuntimeAssociation runtimeAssociation,
+                                          Object value, RuntimePersistentEntity<Object> persistentEntity,
+                                          Object child, RuntimePersistentEntity<Object> childPersistentEntity);
 
-        Mono<Void> persistManyAssociationBatchReactive(Ctx ctx,
-                                                       RuntimeAssociation runtimeAssociation,
-                                                       Object value, RuntimePersistentEntity<Object> persistentEntity,
-                                                       Iterable<Object> child, RuntimePersistentEntity<Object> childPersistentEntity,
-                                                       Predicate<Object> veto);
+        Mono<Void> persistManyAssociationBatch(Ctx ctx,
+                                               RuntimeAssociation runtimeAssociation,
+                                               Object value, RuntimePersistentEntity<Object> persistentEntity,
+                                               Iterable<Object> child, RuntimePersistentEntity<Object> childPersistentEntity,
+                                               Predicate<Object> veto);
     }
 
 }
