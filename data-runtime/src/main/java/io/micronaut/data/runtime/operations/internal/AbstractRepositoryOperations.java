@@ -54,6 +54,8 @@ import io.micronaut.http.MediaType;
 import io.micronaut.http.codec.MediaTypeCodec;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
+import reactor.core.publisher.Flux;
+import reactor.core.publisher.Mono;
 
 import java.util.AbstractMap;
 import java.util.ArrayList;
@@ -293,6 +295,199 @@ public abstract class AbstractRepositoryOperations<Cnt, PS, Exc extends Exceptio
                     }
                 }
                 operationContext.persisted.addAll(entities);
+            }
+        }
+        return entity;
+    }
+
+    protected <T> ReactiveEntityOperations<T> persistOneReactiveOp(Cnt cnt, RuntimePersistentEntity<T> persistentEntity, T value, OperationContext operationContext) {
+        throw new IllegalStateException();
+    }
+
+    protected <T> ReactiveEntitiesOperations<T> persistBatchReactiveOp(Cnt cnt, RuntimePersistentEntity<T> persistentEntity, Iterable<T> values, OperationContext operationContext) {
+        throw new IllegalStateException();
+    }
+
+    protected <T> ReactiveEntityOperations<T> updateOneReactiveOp(Cnt cnt, RuntimePersistentEntity<T> persistentEntity, T value, OperationContext operationContext) {
+        throw new IllegalStateException();
+    }
+
+    private Mono<Object> persistOneReactive(Cnt cnt, Object child, RuntimePersistentEntity<Object> childPersistentEntity, OperationContext operationContext) {
+        ReactiveEntityOperations<Object> persistOneOp = persistOneReactiveOp(cnt, childPersistentEntity, child, operationContext);
+        persistOneSync(cnt, persistOneOp, operationContext);
+        return persistOneOp.getEntity();
+    }
+
+    private Flux<Object> persistBatchReactive(Cnt cnt, Iterable<Object> values,
+                                          RuntimePersistentEntity<Object> childPersistentEntity,
+                                          Predicate<Object> predicate,
+                                          OperationContext operationContext) {
+        ReactiveEntitiesOperations<Object> persistBatchOp = persistBatchReactiveOp(cnt, childPersistentEntity, values, operationContext);
+        persistBatchOp.veto(predicate);
+        persistInBatch(cnt, persistBatchOp, operationContext);
+        return persistBatchOp.getEntities();
+    }
+
+    private Mono<Object> updateOneReactive(Cnt cnt, Object child, RuntimePersistentEntity<Object> childPersistentEntity, OperationContext operationContext) {
+        ReactiveEntityOperations<Object> updateOneOp = updateOneReactiveOp(cnt, childPersistentEntity, child, operationContext);
+        updateOneSync(cnt, updateOneOp, operationContext);
+        return updateOneOp.getEntity();
+    }
+
+    protected Mono<Void> persistManyAssociationReactive(Cnt cnt,
+                                              RuntimeAssociation runtimeAssociation,
+                                              Object value, RuntimePersistentEntity<Object> persistentEntity,
+                                              Object child, RuntimePersistentEntity<Object> childPersistentEntity,
+                                              OperationContext operationContext) {
+        throw new IllegalStateException();
+    }
+
+    protected Mono<Void> persistManyAssociationBatchReactive(Cnt cnt,
+                                                   RuntimeAssociation runtimeAssociation,
+                                                   Object value, RuntimePersistentEntity<Object> persistentEntity,
+                                                   Iterable<Object> child, RuntimePersistentEntity<Object> childPersistentEntity,
+                                                   Predicate<Object> veto,
+                                                   OperationContext operationContext) {
+        throw new IllegalStateException();
+    }
+
+    protected  <T> Mono<T> cascadeEntityReactive(Cnt cnt,
+                                      T en, RuntimePersistentEntity<T> persistentEntity,
+                                      boolean isPost, Relation.Cascade cascadeType,
+                                      OperationContext operationContext) {
+        List<CascadeOp> cascadeOps = new ArrayList<>();
+
+        cascade(operationContext.annotationMetadata, operationContext.repositoryType, isPost, cascadeType, CascadeContext.of(operationContext.associations, en), persistentEntity, en, cascadeOps);
+
+        Mono<T> entity = Mono.just(en);
+
+        for (CascadeOp cascadeOp : cascadeOps) {
+            if (cascadeOp instanceof CascadeOneOp) {
+                CascadeOneOp cascadeOneOp = (CascadeOneOp) cascadeOp;
+                Object child = cascadeOneOp.child;
+                RuntimePersistentEntity<Object> childPersistentEntity = cascadeOneOp.childPersistentEntity;
+                RuntimeAssociation<Object> association = (RuntimeAssociation) cascadeOp.ctx.getAssociation();
+
+                if (operationContext.persisted.contains(child)) {
+                    continue;
+                }
+                boolean hasId = childPersistentEntity.getIdentity().getProperty().get(child) != null;
+
+                Mono<Object> childMono;
+                if (!hasId && (cascadeType == Relation.Cascade.PERSIST)) {
+                    if (LOG.isDebugEnabled()) {
+                        LOG.debug("Cascading PERSIST for '{}' association: '{}'", persistentEntity.getName(), cascadeOp.ctx.associations);
+                    }
+                    Mono<Object> persisted = persistOneReactive(cnt, child, childPersistentEntity, operationContext);
+                    entity = entity.flatMap(e -> persisted.map(persistedEntity -> afterCascadedOne(e, cascadeOp.ctx.associations, child, persistedEntity)));
+                    childMono = persisted;
+                } else if (hasId && (cascadeType == Relation.Cascade.UPDATE)) {
+                    if (LOG.isDebugEnabled()) {
+                        LOG.debug("Cascading MERGE for '{}' ({}) association: '{}'", persistentEntity.getName(),
+                                persistentEntity.getIdentity().getProperty().get(en), cascadeOp.ctx.associations);
+                    }
+                    Mono<Object> updated = updateOneReactive(cnt, child, childPersistentEntity, operationContext);
+                    entity = entity.flatMap(e -> updated.map(updatedEntity -> afterCascadedOne(e, cascadeOp.ctx.associations, child, updatedEntity)));
+                    childMono = updated;
+                } else {
+                    childMono = Mono.just(child);
+                }
+
+                if (!hasId
+                        && (cascadeType == Relation.Cascade.PERSIST || cascadeType == Relation.Cascade.UPDATE)
+                        && SqlQueryBuilder.isForeignKeyWithJoinTable(association)) {
+                    entity = entity.flatMap(e -> childMono.flatMap(c -> {
+                        if (operationContext.persisted.contains(c)) {
+                            return Mono.just(e);
+                        }
+                        operationContext.persisted.add(c);
+                        RuntimePersistentEntity<Object> entity1 = getEntity((Class<Object>) e.getClass());
+                        Mono<Void> op = persistManyAssociationReactive(cnt, association, e, entity1, c, childPersistentEntity, operationContext);
+                        return op.thenReturn(e);
+                    }));
+                } else {
+                    entity = entity.flatMap(e -> childMono.map(c -> {
+                        operationContext.persisted.add(c);
+                        return e;
+                    }));
+                }
+            } else if (cascadeOp instanceof CascadeManyOp) {
+                CascadeManyOp cascadeManyOp = (CascadeManyOp) cascadeOp;
+                RuntimePersistentEntity<Object> childPersistentEntity = cascadeManyOp.childPersistentEntity;
+
+                Mono<List<Object>> children;
+                if (cascadeType == Relation.Cascade.UPDATE) {
+                    if (LOG.isDebugEnabled()) {
+                        LOG.debug("Cascading UPDATE for '{}' association: '{}'", persistentEntity.getName(), cascadeOp.ctx.associations);
+                    }
+                    Flux<Object> childrenFlux = Flux.empty();
+                    for (Object child : cascadeManyOp.children) {
+                        if (operationContext.persisted.contains(child)) {
+                            continue;
+                        }
+                        Mono<Object> modifiedEntity;
+                        if (childPersistentEntity.getIdentity().getProperty().get(child) == null) {
+                            modifiedEntity = persistOneReactive(cnt, child, childPersistentEntity, operationContext);
+                        } else {
+                            modifiedEntity = updateOneReactive(cnt, child, childPersistentEntity, operationContext);
+                        }
+                        childrenFlux = childrenFlux.concatWith(modifiedEntity);
+                    }
+                    children = childrenFlux.collectList();
+                } else if (cascadeType == Relation.Cascade.PERSIST) {
+                    if (isSupportsBatchInsert(persistentEntity, operationContext.dialect)) {
+                        if (LOG.isDebugEnabled()) {
+                            LOG.debug("Cascading PERSIST for '{}' association: '{}'", persistentEntity.getName(), cascadeOp.ctx.associations);
+                        }
+                        RuntimePersistentProperty<Object> identity = childPersistentEntity.getIdentity();
+                        Predicate<Object> veto = val -> operationContext.persisted.contains(val) || identity.getProperty().get(val) != null;
+                        Flux<Object> inserted = persistBatchReactive(cnt,  cascadeManyOp.children, childPersistentEntity, veto, operationContext);
+                        children = inserted.collectList();
+                    } else {
+                        if (LOG.isDebugEnabled()) {
+                            LOG.debug("Cascading PERSIST for '{}' association: '{}'", persistentEntity.getName(), cascadeOp.ctx.associations);
+                        }
+
+                        Flux<Object> childrenFlux = Flux.empty();
+                        for (Object child : cascadeManyOp.children) {
+                            if (operationContext.persisted.contains(child) || childPersistentEntity.getIdentity().getProperty().get(child) != null) {
+                                childrenFlux = childrenFlux.concatWith(Mono.just(child));
+                                continue;
+                            }
+                            Mono<Object> persisted = persistOneReactive(cnt, child, childPersistentEntity, operationContext);
+                            childrenFlux = childrenFlux.concatWith(persisted);
+                        }
+                        children = childrenFlux.collectList();
+                    }
+                } else {
+                    continue;
+                }
+                entity = entity.flatMap(e -> children.flatMap(newChildren -> {
+                    T entityAfterCascade = afterCascadedMany(e, cascadeOp.ctx.associations, cascadeManyOp.children, newChildren);
+                    RuntimeAssociation<Object> association = (RuntimeAssociation) cascadeOp.ctx.getAssociation();
+                    if (SqlQueryBuilder.isForeignKeyWithJoinTable(association)) {
+                        if (operationContext.dialect.allowBatch()) {
+                            Predicate<Object> veto = operationContext.persisted::contains;
+                            RuntimePersistentEntity<Object> parentPe = getEntity((Class<Object>) cascadeOp.ctx.parent.getClass());
+                            Mono<Void> op = persistManyAssociationBatchReactive(cnt, association, cascadeOp.ctx.parent, parentPe, newChildren, childPersistentEntity, veto, operationContext);
+                            return op.thenReturn(entityAfterCascade);
+                        } else {
+                            Mono<T> res = Mono.just(entityAfterCascade);
+                            for (Object child : newChildren) {
+                                if (operationContext.persisted.contains(child)) {
+                                    continue;
+                                }
+                                RuntimePersistentEntity<Object> runtimePersistentEntity = getEntity((Class<Object>) cascadeOp.ctx.parent.getClass());
+                                Mono<Void> op = persistManyAssociationReactive(cnt, association, cascadeOp.ctx.parent, runtimePersistentEntity, child, childPersistentEntity, operationContext);
+                                res = res.flatMap(op::thenReturn);
+                            }
+                            return res;
+                        }
+                    }
+                    operationContext.persisted.addAll(newChildren);
+                    return Mono.just(entityAfterCascade);
+                }));
+
             }
         }
         return entity;
@@ -908,6 +1103,26 @@ public abstract class AbstractRepositoryOperations<Cnt, PS, Exc extends Exceptio
     }
 
     /**
+     * The entity operations container.
+     *
+     * @param <T> The entity type
+     */
+    protected abstract class ReactiveEntityOperations<T> extends EntityOperations<T> {
+
+        /**
+         * Create a new instance.
+         *
+         * @param persistentEntity The RuntimePersistentEntity
+         */
+        protected ReactiveEntityOperations(RuntimePersistentEntity<T> persistentEntity) {
+            super(persistentEntity);
+        }
+
+        public abstract Mono<T> getEntity();
+
+    }
+
+    /**
      * The entities operations container.
      *
      * @param <T> The entity type
@@ -924,6 +1139,25 @@ public abstract class AbstractRepositoryOperations<Cnt, PS, Exc extends Exceptio
         }
 
         public abstract List<T> getEntities();
+    }
+
+    /**
+     * The entities operations container.
+     *
+     * @param <T> The entity type
+     */
+    protected abstract class ReactiveEntitiesOperations<T> extends EntitiesOperations<T> {
+
+        /**
+         * Create a new instance.
+         *
+         * @param persistentEntity The RuntimePersistentEntity
+         */
+        protected ReactiveEntitiesOperations(RuntimePersistentEntity<T> persistentEntity) {
+            super(persistentEntity);
+        }
+
+        public abstract Flux<T> getEntities();
     }
 
     /**
