@@ -1,0 +1,17 @@
+
+repositories {
+	mavenCentral()
+	maven { url "https://s01.oss.sonatype.org/content/repositories/snapshots/" }
+}
+
+configurations.all {
+	resolutionStrategy.cacheChangingModulesFor 0, 'seconds'
+}
+
+dependencies {
+	implementation projects.dataProcessor
+	implementation libs.micronaut.serde.processor
+	implementation libs.micronaut.serde.api
+	compileOnly projects.dataModel
+	compileOnly mn.micronaut.inject.java
+}

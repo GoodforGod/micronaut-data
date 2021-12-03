@@ -36,11 +36,13 @@ rootProject.name = 'data'
 include 'data-bom'
 include 'data-model'
 include 'data-processor'
+include 'data-document-processor'
 include 'data-runtime'
 include 'data-tx'
 
 // Test Compatibility Kit
 include 'data-tck'
+include 'data-document-tck'
 
 // implementations
 include 'data-hibernate-jpa'

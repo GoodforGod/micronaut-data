@@ -24,7 +24,7 @@ import org.bson.types.ObjectId;
 import java.util.Optional;
 
 /**
- * MongoDB converters.
+ * MongoDB's converters.
  *
  * @author Denis Stepanov
  * @since 3.3.0
@@ -40,6 +40,21 @@ final class MongoConvertersFactory {
             }
             return Optional.empty();
         };
+    }
+
+    @Prototype
+    DataTypeConverter<BsonValue, String> bsonValueAsString() {
+        return (value, targetType, context) -> {
+            if (value.isObjectId()) {
+                return Optional.of(value.asObjectId().getValue().toHexString());
+            }
+            return Optional.empty();
+        };
+    }
+
+    @Prototype
+    DataTypeConverter<ObjectId, String> objectIdAsString() {
+        return (value, targetType, context) -> Optional.of(value.toHexString());
     }
 
 }

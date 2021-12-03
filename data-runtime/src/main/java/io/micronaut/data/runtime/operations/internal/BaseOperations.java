@@ -9,6 +9,7 @@ import io.micronaut.core.type.Argument;
 import io.micronaut.data.annotation.Relation;
 import io.micronaut.data.event.EntityEventContext;
 import io.micronaut.data.event.EntityEventListener;
+import io.micronaut.data.exceptions.DataAccessException;
 import io.micronaut.data.exceptions.OptimisticLockException;
 import io.micronaut.data.model.runtime.RuntimePersistentEntity;
 
@@ -48,6 +49,69 @@ abstract class BaseOperations<T, Exc extends Exception> {
     }
 
     /**
+     * Persist one operation.
+     */
+    public void persist() {
+        try {
+            boolean vetoed = triggerPrePersist();
+            if (vetoed) {
+                return;
+            }
+            cascadePre(Relation.Cascade.PERSIST);
+            execute();
+            triggerPostPersist();
+            cascadePost(Relation.Cascade.PERSIST);
+        } catch (Exception e) {
+            failed(e, "PERSIST");
+        }
+    }
+
+    /**
+     * Delete one operation.
+     */
+    public void delete() {
+        collectAutoPopulatedPreviousValues();
+        boolean vetoed = triggerPreRemove();
+        if (vetoed) {
+            // operation vetoed
+            return;
+        }
+        try {
+            execute();
+            triggerPostRemove();
+        } catch (OptimisticLockException ex) {
+            throw ex;
+        } catch (Exception e) {
+            failed(e, "DELETE");
+        }
+    }
+
+    /**
+     * Update one operation.
+     */
+    public void update() {
+        collectAutoPopulatedPreviousValues();
+        boolean vetoed = triggerPreUpdate();
+        if (vetoed) {
+            return;
+        }
+        try {
+            cascadePre(Relation.Cascade.UPDATE);
+            execute();
+            triggerPostUpdate();
+            cascadePost(Relation.Cascade.UPDATE);
+        } catch (OptimisticLockException ex) {
+            throw ex;
+        } catch (Exception e) {
+            failed(e, "UPDATE");
+        }
+    }
+
+    protected void failed(Exception e, String operation) throws DataAccessException {
+        throw new DataAccessException("Error executing " + operation + ": " + e.getMessage(), e);
+    }
+
+    /**
      * Cascade pre operation.
      *
      * @param cascadeType The cascade type
@@ -58,12 +122,11 @@ abstract class BaseOperations<T, Exc extends Exception> {
      * Cascade post operation.
      *
      * @param cascadeType The cascade type
-     * @param cnt         The connection
      */
     protected abstract void cascadePost(Relation.Cascade cascadeType);
 
     /**
-     * Collect auto populated values before pre-triggers modifies them.
+     * Collect auto-populated values before pre-triggers modifies them.
      */
     protected abstract void collectAutoPopulatedPreviousValues();
 

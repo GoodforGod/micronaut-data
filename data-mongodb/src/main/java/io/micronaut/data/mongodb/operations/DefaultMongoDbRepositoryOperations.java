@@ -34,9 +34,9 @@ import io.micronaut.data.model.runtime.UpdateBatchOperation;
 import io.micronaut.data.model.runtime.UpdateOperation;
 import io.micronaut.data.runtime.convert.DataConversionService;
 import io.micronaut.data.runtime.date.DateTimeProvider;
+import io.micronaut.data.runtime.operations.internal.AbstractRepositoryOperations;
 import io.micronaut.data.runtime.operations.internal.AbstractSyncEntitiesOperations;
 import io.micronaut.data.runtime.operations.internal.AbstractSyncEntityOperations;
-import io.micronaut.data.runtime.operations.internal.AbstractRepositoryOperations;
 import io.micronaut.data.runtime.operations.internal.OperationContext;
 import io.micronaut.data.runtime.operations.internal.SyncCascadeOperations;
 import io.micronaut.http.codec.MediaTypeCodec;
@@ -47,7 +47,6 @@ import java.io.Serializable;
 import java.util.List;
 import java.util.Map;
 import java.util.Optional;
-import java.util.UUID;
 import java.util.function.Predicate;
 import java.util.stream.Collectors;
 import java.util.stream.Stream;
@@ -85,12 +84,8 @@ public class DefaultMongoDbRepositoryOperations extends AbstractRepositoryOperat
     public <T> T findOne(Class<T> type, Serializable id) {
         try (ClientSession clientSession = mongoClient.startSession()) {
             RuntimePersistentEntity<T> persistentEntity = runtimeEntityRegistry.getEntity(type);
-            MongoCollection<T> collection = getCollection(persistentEntity);
-            // TODO: correct UUID
-            Serializable value = id instanceof UUID ? id.toString() : id;
-            Bson eq = Filters.eq(value);
-
-            return collection.find(clientSession, eq, type).first();
+            Bson eq = Utils.filterById(conversionService, persistentEntity, id);
+            return getCollection(persistentEntity).find(clientSession, eq, type).first();
         }
     }
 
@@ -280,7 +275,12 @@ public class DefaultMongoDbRepositoryOperations extends AbstractRepositoryOperat
             protected void execute() throws RuntimeException {
                 MongoCollection<T> collection = getCollection(persistentEntity);
                 Object id = persistentEntity.getIdentity().getProperty().get(entity);
-                UpdateResult updateResult = collection.replaceOne(ctx.clientSession, Filters.eq(id), entity);
+
+                UpdateResult updateResult = collection.replaceOne(
+                        ctx.clientSession,
+                        Utils.filterById(conversionService, persistentEntity, id),
+                        entity
+                );
                 modifiedCount = updateResult.getModifiedCount();
             }
         };
@@ -298,7 +298,11 @@ public class DefaultMongoDbRepositoryOperations extends AbstractRepositoryOperat
                         continue;
                     }
                     Object id = persistentEntity.getIdentity().getProperty().get(d.entity);
-                    UpdateResult updateResult = collection.replaceOne(ctx.clientSession, Filters.eq(id), d.entity);
+                    UpdateResult updateResult = collection.replaceOne(
+                            ctx.clientSession,
+                            Utils.filterById(conversionService, persistentEntity, id),
+                            d.entity
+                    );
                     modifiedCount += updateResult.getModifiedCount();
                 }
             }
@@ -312,7 +316,10 @@ public class DefaultMongoDbRepositoryOperations extends AbstractRepositoryOperat
             protected void execute() throws RuntimeException {
                 MongoCollection<T> collection = getCollection(persistentEntity);
                 Object id = persistentEntity.getIdentity().getProperty().get(entity);
-                DeleteResult deleteResult = collection.deleteOne(ctx.clientSession, Filters.eq(id));
+                DeleteResult deleteResult = collection.deleteOne(
+                        ctx.clientSession,
+                        Utils.filterById(conversionService, persistentEntity, id)
+                );
                 modifiedCount = deleteResult.getDeletedCount();
             }
         };
@@ -326,7 +333,7 @@ public class DefaultMongoDbRepositoryOperations extends AbstractRepositoryOperat
                 BeanProperty<T, ?> idProperty = persistentEntity.getIdentity().getProperty();
                 Bson filter = entities.stream()
                         .map(d -> idProperty.get(d.entity))
-                        .map(Filters::eq)
+                        .map(id -> Utils.filterById(conversionService, persistentEntity, id))
                         .collect(Collectors.collectingAndThen(Collectors.toList(), Filters::or));
                 MongoCollection<T> collection = getCollection(persistentEntity);
                 DeleteResult deleteResult = collection.deleteMany(ctx.clientSession, filter);

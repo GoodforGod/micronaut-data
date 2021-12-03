@@ -1,0 +1,19 @@
+dependencies {
+    annotationProcessor "io.micronaut:micronaut-inject-java"
+    annotationProcessor projects.dataDocumentProcessor
+
+    compileOnly "io.micronaut:micronaut-inject-groovy"
+    implementation project(":data-model")
+    implementation "io.projectreactor:reactor-core"
+
+    implementation "io.micronaut.test:micronaut-test-spock"
+    implementation  "io.micronaut.test:micronaut-test-core"
+}
+
+tasks.withType(JavaCompile){
+    options.encoding = "UTF-8"
+    options.compilerArgs.add('-parameters')
+}
+
+checkstyleMain.enabled = false
+checkstyleNohttp.enabled = false

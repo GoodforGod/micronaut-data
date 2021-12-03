@@ -2,7 +2,6 @@ package io.micronaut.data.mongodb.serde;
 
 import io.micronaut.core.beans.BeanIntrospector;
 import io.micronaut.data.model.runtime.RuntimeEntityRegistry;
-import io.micronaut.serde.SerdeRegistry;
 import jakarta.inject.Singleton;
 import org.bson.codecs.Codec;
 import org.bson.codecs.configuration.CodecRegistry;
@@ -17,8 +16,8 @@ public class DataCodecRegistry implements CodecRegistry {
     private final RuntimeEntityRegistry runtimeEntityRegistry;
     private final Map<Class, Codec> codecs = new ConcurrentHashMap<>();
 
-    public DataCodecRegistry(SerdeRegistry serdeRegistry, RuntimeEntityRegistry runtimeEntityRegistry) {
-        this.dataSerdeRegistry = new DataSerdeRegistry(serdeRegistry, runtimeEntityRegistry);
+    public DataCodecRegistry(DataSerdeRegistry dataSerdeRegistry, RuntimeEntityRegistry runtimeEntityRegistry) {
+        this.dataSerdeRegistry = dataSerdeRegistry;
         this.runtimeEntityRegistry = runtimeEntityRegistry;
     }
 

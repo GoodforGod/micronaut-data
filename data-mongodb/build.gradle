@@ -8,8 +8,7 @@ configurations.all {
 }
 
 dependencies {
-    annotationProcessor("io.micronaut.serde:micronaut-serde-processor:1.0.0-SNAPSHOT")
-    implementation "io.micronaut.serde:micronaut-serde-bson:1.0.0-SNAPSHOT"
+    implementation libs.micronaut.serde.bson
 
     annotationProcessor mn.micronaut.inject.java
     annotationProcessor mn.micronaut.graal
@@ -25,17 +24,12 @@ dependencies {
 
     compileOnly "io.micronaut.reactor:micronaut-reactor"
 
-//    managed-mongodb-driver-sync = { module = "org.mongodb:mongodb-driver-sync", version.ref = "managed-mongo" }
-//    managed-mongodb-driver-core = { module = "org.mongodb:mongodb-driver-core", version.ref = "managed-mongo" }
-//    managed-mongo-reactive = { module = "org.mongodb:mongodb-driver-reactivestreams", version.ref = "managed-mongo-reactive" }
-
-    testImplementation projects.dataTck
+    testImplementation projects.dataDocumentTck
 
     testAnnotationProcessor mn.micronaut.graal
-    testAnnotationProcessor projects.dataProcessor
+    testAnnotationProcessor projects.dataDocumentProcessor
 
     testCompileOnly mn.micronaut.inject.groovy
-    testImplementation projects.dataProcessor
     testImplementation 'io.micronaut.rxjava2:micronaut-rxjava2'
     testImplementation "io.micronaut.reactor:micronaut-reactor"
 

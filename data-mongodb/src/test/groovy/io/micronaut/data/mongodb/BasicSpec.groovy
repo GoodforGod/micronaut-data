@@ -22,9 +22,10 @@ import io.micronaut.core.type.Argument
 import io.micronaut.data.model.runtime.InsertOperation
 import io.micronaut.data.model.runtime.RuntimeEntityRegistry
 import io.micronaut.data.model.runtime.StoredQuery
+import io.micronaut.data.model.runtime.UpdateOperation
 import io.micronaut.data.mongodb.operations.DefaultMongoDbRepositoryOperations
 import io.micronaut.data.mongodb.operations.DefaultReactiveMongoDbRepositoryOperations
-import io.micronaut.data.tck.entities.Country
+import io.micronaut.data.tck.Customer
 import io.micronaut.test.extensions.spock.annotation.MicronautTest
 import io.micronaut.test.support.TestPropertyProvider
 import jakarta.inject.Inject
@@ -52,31 +53,81 @@ class BasicSpec extends Specification implements TestPropertyProvider {
 
     void "test insert"() {
         when:
-            def persisted = dbRepositoryOperations.persist(insertOperation(new Country("Czech Republic")))
+            def persisted = dbRepositoryOperations.persist(insertOperation(new Customer(firstName: "John", lastName: "Doe")))
         then:
-            persisted.uuid
+            persisted.id
         when:
-            def found = dbRepositoryOperations.findOne(Country, persisted.uuid)
+            def found = dbRepositoryOperations.findOne(Customer, persisted.id)
         then:
-            found.uuid == persisted.uuid
-            found.name == persisted.name
+            found.id == persisted.id
+            found.firstName == persisted.firstName
+            found.lastName == persisted.lastName
+        when:
+            found.firstName = "Denis"
+            dbRepositoryOperations.update(updateOperation(found))
+            def updated = dbRepositoryOperations.findOne(Customer, persisted.id)
+        then:
+            updated.id == persisted.id
+            updated.firstName == "Denis"
+            updated.lastName == "Doe"
     }
 
     void "test insert reactive"() {
         when:
-            def persisted = reactiveMongoDbRepositoryOperations.persist(insertOperation(new Country("Czech Republic"))).block()
+            def persisted = reactiveMongoDbRepositoryOperations.persist(insertOperation(new Customer(firstName: "John", lastName: "Doe"))).block()
         then:
-            persisted.uuid
+            persisted.id
         when:
-            def found = reactiveMongoDbRepositoryOperations.findOne(Country, persisted.uuid).block()
+            def found = reactiveMongoDbRepositoryOperations.findOne(Customer, persisted.id).block()
         then:
-            found.uuid == persisted.uuid
-            found.name == persisted.name
+            found.id == persisted.id
+            found.firstName == persisted.firstName
+            found.lastName == persisted.lastName
     }
 
     @CompileStatic
     <T> InsertOperation<T> insertOperation(T instance) {
         return new InsertOperation<T>() {
+            @Override
+            T getEntity() {
+                return instance
+            }
+
+            @Override
+            Class<T> getRootEntity() {
+                return instance.getClass() as Class<T>
+            }
+
+            @Override
+            Class<?> getRepositoryType() {
+                return Object.class
+            }
+
+            @Override
+            StoredQuery<T, ?> getStoredQuery() {
+                return null
+            }
+
+            @Override
+            String getName() {
+                return instance.getClass().name
+            }
+
+            @Override
+            ConvertibleValues<Object> getAttributes() {
+                return ConvertibleValues.EMPTY
+            }
+
+            @Override
+            Argument<T> getResultArgument() {
+                return Argument.of(instance.getClass()) as Argument<T>
+            }
+        }
+    }
+
+    @CompileStatic
+    <T> UpdateOperation<T> updateOperation(T instance) {
+        return new UpdateOperation<T>() {
             @Override
             T getEntity() {
                 return instance
