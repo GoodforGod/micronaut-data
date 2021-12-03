@@ -74,6 +74,7 @@ import io.micronaut.data.runtime.operations.internal.AbstractSyncEntityOperation
 import io.micronaut.data.runtime.operations.internal.AbstractSqlRepositoryOperations;
 import io.micronaut.data.runtime.operations.internal.DBOperation;
 import io.micronaut.data.runtime.operations.internal.OpContext;
+import io.micronaut.data.runtime.operations.internal.OperationContext;
 import io.micronaut.data.runtime.operations.internal.StoredQuerySqlOperation;
 import io.micronaut.data.runtime.operations.internal.StoredSqlOperation;
 import io.micronaut.data.runtime.operations.internal.SyncCascadeOperations;

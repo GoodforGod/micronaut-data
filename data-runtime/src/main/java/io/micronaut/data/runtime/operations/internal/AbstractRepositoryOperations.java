@@ -323,16 +323,4 @@ public abstract class AbstractRepositoryOperations<Cnt, PS>
         PS create(String ps) throws Exception;
     }
 
-    public static class OperationContext {
-        public final AnnotationMetadata annotationMetadata;
-        public final Class<?> repositoryType;
-        public final List<Association> associations = Collections.emptyList();
-        public final Set<Object> persisted = new HashSet<>(5);
-
-        public OperationContext(AnnotationMetadata annotationMetadata, Class<?> repositoryType) {
-            this.annotationMetadata = annotationMetadata;
-            this.repositoryType = repositoryType;
-        }
-    }
-
 }

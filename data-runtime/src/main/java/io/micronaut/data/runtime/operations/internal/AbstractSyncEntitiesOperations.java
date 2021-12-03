@@ -19,7 +19,7 @@ import java.util.function.Predicate;
 import java.util.stream.Collectors;
 import java.util.stream.Stream;
 
-public abstract class AbstractSyncEntitiesOperations<Ctx extends AbstractRepositoryOperations.OperationContext, T, Exc extends Exception> extends SyncEntitiesOperations<T, Exc> {
+public abstract class AbstractSyncEntitiesOperations<Ctx extends OperationContext, T, Exc extends Exception> extends SyncEntitiesOperations<T, Exc> {
 
     protected final Ctx ctx;
     protected final SyncCascadeOperations<Ctx> cascadeOperations;

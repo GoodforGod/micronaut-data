@@ -69,6 +69,7 @@ import io.micronaut.data.runtime.operations.internal.AbstractReactiveEntityOpera
 import io.micronaut.data.runtime.operations.internal.AbstractSqlRepositoryOperations;
 import io.micronaut.data.runtime.operations.internal.DBOperation;
 import io.micronaut.data.runtime.operations.internal.OpContext;
+import io.micronaut.data.runtime.operations.internal.OperationContext;
 import io.micronaut.data.runtime.operations.internal.ReactiveCascadeOperations;
 import io.micronaut.data.runtime.operations.internal.StoredQuerySqlOperation;
 import io.micronaut.data.runtime.operations.internal.StoredSqlOperation;

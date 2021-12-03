@@ -7,7 +7,6 @@ import io.micronaut.data.event.EntityEventListener;
 import io.micronaut.data.model.runtime.QueryParameterBinding;
 import io.micronaut.data.model.runtime.RuntimePersistentEntity;
 import io.micronaut.data.runtime.event.DefaultEntityEventContext;
-import io.micronaut.data.runtime.operations.internal.AbstractRepositoryOperations.OperationContext;
 
 import java.util.Map;
 import java.util.Objects;

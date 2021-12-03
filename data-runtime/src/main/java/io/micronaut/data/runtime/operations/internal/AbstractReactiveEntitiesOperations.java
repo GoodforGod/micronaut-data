@@ -16,7 +16,7 @@ import java.util.function.Consumer;
 import java.util.function.Function;
 import java.util.function.Predicate;
 
-public abstract class AbstractReactiveEntitiesOperations<Ctx extends AbstractRepositoryOperations.OperationContext, T, Exc extends Exception> extends ReactiveEntitiesOperations<T, Exc> {
+public abstract class AbstractReactiveEntitiesOperations<Ctx extends OperationContext, T, Exc extends Exception> extends ReactiveEntitiesOperations<T, Exc> {
 
     protected final Ctx ctx;
     protected final ReactiveCascadeOperations<Ctx> cascadeOperations;

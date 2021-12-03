@@ -37,6 +37,7 @@ import io.micronaut.data.runtime.date.DateTimeProvider;
 import io.micronaut.data.runtime.operations.internal.AbstractSyncEntitiesOperations;
 import io.micronaut.data.runtime.operations.internal.AbstractSyncEntityOperations;
 import io.micronaut.data.runtime.operations.internal.AbstractRepositoryOperations;
+import io.micronaut.data.runtime.operations.internal.OperationContext;
 import io.micronaut.data.runtime.operations.internal.SyncCascadeOperations;
 import io.micronaut.http.codec.MediaTypeCodec;
 import org.bson.BsonValue;
