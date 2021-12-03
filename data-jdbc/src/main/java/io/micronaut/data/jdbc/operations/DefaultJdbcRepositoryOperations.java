@@ -221,10 +221,10 @@ public final class DefaultJdbcRepositoryOperations extends AbstractSqlRepository
     }
 
     @Override
-    public void persistManyAssociationSync(JdbcOperationContext ctx,
-                                           RuntimeAssociation runtimeAssociation,
-                                           Object value, RuntimePersistentEntity<Object> persistentEntity,
-                                           Object child, RuntimePersistentEntity<Object> childPersistentEntity) {
+    public void persistManyAssociation(JdbcOperationContext ctx,
+                                       RuntimeAssociation runtimeAssociation,
+                                       Object value, RuntimePersistentEntity<Object> persistentEntity,
+                                       Object child, RuntimePersistentEntity<Object> childPersistentEntity) {
         DBOperation dbInsertOperation = resolveSqlInsertAssociation(ctx.repositoryType, ctx.dialect, runtimeAssociation, persistentEntity, value);
         try {
             new JdbcEntityOperations<>(ctx, childPersistentEntity, child, dbInsertOperation).execute();
@@ -234,10 +234,10 @@ public final class DefaultJdbcRepositoryOperations extends AbstractSqlRepository
     }
 
     @Override
-    public void persistManyAssociationBatchSync(JdbcOperationContext ctx,
-                                                RuntimeAssociation runtimeAssociation,
-                                                Object value, RuntimePersistentEntity<Object> persistentEntity,
-                                                Iterable<Object> child, RuntimePersistentEntity<Object> childPersistentEntity) {
+    public void persistManyAssociationBatch(JdbcOperationContext ctx,
+                                            RuntimeAssociation runtimeAssociation,
+                                            Object value, RuntimePersistentEntity<Object> persistentEntity,
+                                            Iterable<Object> child, RuntimePersistentEntity<Object> childPersistentEntity) {
         DBOperation dbInsertOperation = resolveSqlInsertAssociation(ctx.repositoryType, ctx.dialect, runtimeAssociation, persistentEntity, value);
         try {
             JdbcEntitiesOperations<Object> assocOp = new JdbcEntitiesOperations<>(ctx, childPersistentEntity, child, dbInsertOperation);

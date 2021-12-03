@@ -13,15 +13,19 @@
  * See the License for the specific language governing permissions and
  * limitations under the License.
  */
-package io.micronaut.data.r2dbc.operations;
+package io.micronaut.data.operations.reactive;
 
-import io.micronaut.data.operations.reactive.ReactiveRepositoryOperations;
+import io.micronaut.core.annotation.NonNull;
 
 /**
- * The version of {@link ReactiveRepositoryOperations} which exposes reactor publisher types.
+ * The alternative of {@link ReactiveCapableRepository} that provides {@link ReactorReactiveRepositoryOperations}.
  *
  * @author Denis Stepanov
- * @since 2.4.0
+ * @since 3.3.0
  */
-public interface ReactorReactiveRepositoryOperations extends io.micronaut.data.operations.reactive.ReactorReactiveRepositoryOperations {
+public interface ReactorReactiveCapableRepository extends ReactiveCapableRepository {
+
+    @NonNull
+    @Override
+    ReactorReactiveRepositoryOperations reactive();
 }

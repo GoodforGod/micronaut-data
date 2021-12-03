@@ -23,6 +23,8 @@ dependencies {
     implementation mn.micronaut.mongo
     implementation mn.micronaut.mongo.sync
 
+    compileOnly "io.micronaut.reactor:micronaut-reactor"
+
 //    managed-mongodb-driver-sync = { module = "org.mongodb:mongodb-driver-sync", version.ref = "managed-mongo" }
 //    managed-mongodb-driver-core = { module = "org.mongodb:mongodb-driver-core", version.ref = "managed-mongo" }
 //    managed-mongo-reactive = { module = "org.mongodb:mongodb-driver-reactivestreams", version.ref = "managed-mongo-reactive" }

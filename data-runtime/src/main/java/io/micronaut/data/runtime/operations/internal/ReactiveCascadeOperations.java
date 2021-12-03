@@ -1,5 +1,6 @@
 package io.micronaut.data.runtime.operations.internal;
 
+import io.micronaut.core.annotation.Nullable;
 import io.micronaut.core.convert.ConversionService;
 import io.micronaut.data.annotation.Relation;
 import io.micronaut.data.model.query.builder.sql.SqlQueryBuilder;
@@ -171,11 +172,11 @@ public class ReactiveCascadeOperations<Ctx extends OperationContext> extends Abs
 
         <T> Mono<T> persistOne(Ctx ctx, T value, RuntimePersistentEntity<T> persistentEntity);
 
-        Flux<Object> persistBatch(Ctx ctx, Iterable<Object> values,
-                                  RuntimePersistentEntity<Object> childPersistentEntity,
-                                  Predicate<Object> predicate);
+        <T> Flux<T> persistBatch(Ctx ctx, Iterable<T> values,
+                                 RuntimePersistentEntity<T> persistentEntity,
+                                 @Nullable Predicate<T> predicate);
 
-        Mono<Object> updateOne(Ctx ctx, Object child, RuntimePersistentEntity<Object> childPersistentEntity);
+        <T> Mono<T> updateOne(Ctx ctx, T value, RuntimePersistentEntity<T> persistentEntity);
 
         Mono<Void> persistManyAssociation(Ctx ctx,
                                           RuntimeAssociation runtimeAssociation,

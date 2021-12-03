@@ -186,23 +186,25 @@ final class DefaultR2dbcRepositoryOperations extends AbstractSqlRepositoryOperat
     }
 
     @Override
-    public Flux<Object> persistBatch(R2dbcOperationContext ctx, Iterable<Object> values, RuntimePersistentEntity<Object> persistentEntity, Predicate<Object> predicate) {
+    public <T> Flux<T> persistBatch(R2dbcOperationContext ctx, Iterable<T> values, RuntimePersistentEntity<T> persistentEntity, Predicate<T> predicate) {
         DBOperation childSqlPersistOperation = resolveEntityInsert(
                 ctx.annotationMetadata,
                 ctx.repositoryType,
                 persistentEntity.getIntrospection().getBeanType(),
                 persistentEntity
         );
-        R2dbcEntitiesOperations<Object> op = new R2dbcEntitiesOperations<>(ctx, childSqlPersistOperation, persistentEntity, values, true);
-        op.veto(predicate);
+        R2dbcEntitiesOperations<T> op = new R2dbcEntitiesOperations<>(ctx, childSqlPersistOperation, persistentEntity, values, true);
+        if (predicate != null) {
+            op.veto(predicate);
+        }
         op.persist();
         return op.getEntities();
     }
 
     @Override
-    public Mono<Object> updateOne(R2dbcOperationContext ctx, Object value, RuntimePersistentEntity<Object> persistentEntity) {
+    public <T> Mono<T> updateOne(R2dbcOperationContext ctx, T value, RuntimePersistentEntity<T> persistentEntity) {
         DBOperation childSqlUpdateOperation = resolveEntityUpdate(ctx.annotationMetadata, ctx.repositoryType, value.getClass(), persistentEntity);
-        R2dbcEntityOperations<Object> op = new R2dbcEntityOperations<>(ctx, persistentEntity, value, childSqlUpdateOperation);
+        R2dbcEntityOperations<T> op = new R2dbcEntityOperations<>(ctx, persistentEntity, value, childSqlUpdateOperation);
         op.update();
         return op.getEntity();
     }

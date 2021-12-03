@@ -65,7 +65,7 @@ public class SyncCascadeOperations<Ctx extends OperationContext> extends Abstrac
                         && (cascadeType == Relation.Cascade.PERSIST || cascadeType == Relation.Cascade.UPDATE)
                         && SqlQueryBuilder.isForeignKeyWithJoinTable(association)) {
 
-                    helper.persistManyAssociationSync(ctx, association, entity, (RuntimePersistentEntity<Object>) persistentEntity, child, childPersistentEntity);
+                    helper.persistManyAssociation(ctx, association, entity, (RuntimePersistentEntity<Object>) persistentEntity, child, childPersistentEntity);
                 }
                 ctx.persisted.add(child);
             } else if (cascadeOp instanceof CascadeManyOp) {
@@ -118,14 +118,14 @@ public class SyncCascadeOperations<Ctx extends OperationContext> extends Abstrac
                 RuntimeAssociation<Object> association = (RuntimeAssociation) cascadeOp.ctx.getAssociation();
                 if (SqlQueryBuilder.isForeignKeyWithJoinTable(association) && !entities.isEmpty()) {
                     if (helper.supportsBatch(ctx, childPersistentEntity)) {
-                        helper.persistManyAssociationBatchSync(ctx, association,
+                        helper.persistManyAssociationBatch(ctx, association,
                                 cascadeOp.ctx.parent, cascadeOp.ctx.parentPersistentEntity, entities, childPersistentEntity);
                     } else {
                         for (Object e : cascadeManyOp.children) {
                             if (ctx.persisted.contains(e)) {
                                 continue;
                             }
-                            helper.persistManyAssociationSync(ctx, association,
+                            helper.persistManyAssociation(ctx, association,
                                     cascadeOp.ctx.parent, cascadeOp.ctx.parentPersistentEntity, e, childPersistentEntity);
                         }
                     }
@@ -148,15 +148,15 @@ public class SyncCascadeOperations<Ctx extends OperationContext> extends Abstrac
 
         <T> T updateOne(Ctx ctx, T child, RuntimePersistentEntity<T> childPersistentEntity);
 
-        void persistManyAssociationSync(Ctx ctx,
-                                        RuntimeAssociation runtimeAssociation,
-                                        Object value, RuntimePersistentEntity<Object> persistentEntity,
-                                        Object child, RuntimePersistentEntity<Object> childPersistentEntity);
+        void persistManyAssociation(Ctx ctx,
+                                    RuntimeAssociation runtimeAssociation,
+                                    Object value, RuntimePersistentEntity<Object> persistentEntity,
+                                    Object child, RuntimePersistentEntity<Object> childPersistentEntity);
 
-        void persistManyAssociationBatchSync(Ctx ctx,
-                                             RuntimeAssociation runtimeAssociation,
-                                             Object value, RuntimePersistentEntity<Object> persistentEntity,
-                                             Iterable<Object> child, RuntimePersistentEntity<Object> childPersistentEntity);
+        void persistManyAssociationBatch(Ctx ctx,
+                                         RuntimeAssociation runtimeAssociation,
+                                         Object value, RuntimePersistentEntity<Object> persistentEntity,
+                                         Iterable<Object> child, RuntimePersistentEntity<Object> childPersistentEntity);
     }
 
 

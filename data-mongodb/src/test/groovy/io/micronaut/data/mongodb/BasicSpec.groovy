@@ -23,6 +23,7 @@ import io.micronaut.data.model.runtime.InsertOperation
 import io.micronaut.data.model.runtime.RuntimeEntityRegistry
 import io.micronaut.data.model.runtime.StoredQuery
 import io.micronaut.data.mongodb.operations.DefaultMongoDbRepositoryOperations
+import io.micronaut.data.mongodb.operations.DefaultReactiveMongoDbRepositoryOperations
 import io.micronaut.data.tck.entities.Country
 import io.micronaut.test.extensions.spock.annotation.MicronautTest
 import io.micronaut.test.support.TestPropertyProvider
@@ -41,6 +42,9 @@ class BasicSpec extends Specification implements TestPropertyProvider {
     @Inject
     DefaultMongoDbRepositoryOperations dbRepositoryOperations
 
+    @Inject
+    DefaultReactiveMongoDbRepositoryOperations reactiveMongoDbRepositoryOperations
+
     RuntimeEntityRegistry runtimeEntityRegistry
 
     @Inject
@@ -53,6 +57,18 @@ class BasicSpec extends Specification implements TestPropertyProvider {
             persisted.uuid
         when:
             def found = dbRepositoryOperations.findOne(Country, persisted.uuid)
+        then:
+            found.uuid == persisted.uuid
+            found.name == persisted.name
+    }
+
+    void "test insert reactive"() {
+        when:
+            def persisted = reactiveMongoDbRepositoryOperations.persist(insertOperation(new Country("Czech Republic"))).block()
+        then:
+            persisted.uuid
+        when:
+            def found = reactiveMongoDbRepositoryOperations.findOne(Country, persisted.uuid).block()
         then:
             found.uuid == persisted.uuid
             found.name == persisted.name
