@@ -1006,9 +1006,11 @@ public final class DefaultJdbcRepositoryOperations extends AbstractSqlRepository
     protected static class JdbcOperationContext extends OperationContext {
 
         public final Connection connection;
+        public final Dialect dialect;
 
         public JdbcOperationContext(AnnotationMetadata annotationMetadata, Class<?> repositoryType, Dialect dialect, Connection connection) {
-            super(annotationMetadata, repositoryType, dialect);
+            super(annotationMetadata, repositoryType);
+            this.dialect = dialect;
             this.connection = connection;
         }
     }

@@ -141,7 +141,7 @@ public class ReactiveCascadeOperations<Ctx extends OperationContext> extends Abs
                     T entityAfterCascade = afterCascadedMany(e, cascadeOp.ctx.associations, cascadeManyOp.children, newChildren);
                     RuntimeAssociation<Object> association = (RuntimeAssociation) cascadeOp.ctx.getAssociation();
                     if (SqlQueryBuilder.isForeignKeyWithJoinTable(association)) {
-                        if (ctx.dialect.allowBatch()) {
+                        if (helper.supportsBatch(ctx, cascadeOp.ctx.parentPersistentEntity)) {
                             Predicate<Object> veto = ctx.persisted::contains;
                             Mono<Void> op = helper.persistManyAssociationBatch(ctx, association, cascadeOp.ctx.parent, cascadeOp.ctx.parentPersistentEntity, newChildren, childPersistentEntity, veto);
                             return op.thenReturn(entityAfterCascade);

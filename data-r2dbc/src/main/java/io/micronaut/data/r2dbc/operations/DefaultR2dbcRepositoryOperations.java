@@ -1296,9 +1296,11 @@ final class DefaultR2dbcRepositoryOperations extends AbstractSqlRepositoryOperat
     protected static class R2dbcOperationContext extends OperationContext {
 
         private final Connection connection;
+        private final Dialect dialect;
 
         public R2dbcOperationContext(AnnotationMetadata annotationMetadata, Class<?> repositoryType, Dialect dialect, Connection connection) {
-            super(annotationMetadata, repositoryType, dialect);
+            super(annotationMetadata, repositoryType);
+            this.dialect = dialect;
             this.connection = connection;
         }
     }

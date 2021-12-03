@@ -136,7 +136,7 @@ public class DefaultMongoDbRepositoryOperations extends AbstractRepositoryOperat
     @Override
     public <T> T persist(InsertOperation<T> operation) {
         try (ClientSession clientSession = mongoClient.startSession()) {
-            MongoDbOperationContext ctx = new MongoDbOperationContext(clientSession, operation.getRepositoryType(), null, operation.getAnnotationMetadata());
+            MongoDbOperationContext ctx = new MongoDbOperationContext(clientSession, operation.getRepositoryType(), operation.getAnnotationMetadata());
             return persistOneSync(ctx, operation.getEntity(), runtimeEntityRegistry.getEntity(operation.getRootEntity()));
         }
     }
@@ -144,7 +144,7 @@ public class DefaultMongoDbRepositoryOperations extends AbstractRepositoryOperat
     @Override
     public <T> Iterable<T> persistAll(InsertBatchOperation<T> operation) {
         try (ClientSession clientSession = mongoClient.startSession()) {
-            MongoDbOperationContext ctx = new MongoDbOperationContext(clientSession, operation.getRepositoryType(), null, operation.getAnnotationMetadata());
+            MongoDbOperationContext ctx = new MongoDbOperationContext(clientSession, operation.getRepositoryType(), operation.getAnnotationMetadata());
             return persistBatchSync(ctx, operation, runtimeEntityRegistry.getEntity(operation.getRootEntity()), null);
         }
     }
@@ -152,7 +152,7 @@ public class DefaultMongoDbRepositoryOperations extends AbstractRepositoryOperat
     @Override
     public <T> T update(UpdateOperation<T> operation) {
         try (ClientSession clientSession = mongoClient.startSession()) {
-            MongoDbOperationContext ctx = new MongoDbOperationContext(clientSession, operation.getRepositoryType(), null, operation.getAnnotationMetadata());
+            MongoDbOperationContext ctx = new MongoDbOperationContext(clientSession, operation.getRepositoryType(), operation.getAnnotationMetadata());
             return updateOneSync(ctx, operation.getEntity(), runtimeEntityRegistry.getEntity(operation.getRootEntity()));
         }
     }
@@ -160,7 +160,7 @@ public class DefaultMongoDbRepositoryOperations extends AbstractRepositoryOperat
     @Override
     public <T> Iterable<T> updateAll(UpdateBatchOperation<T> operation) {
         try (ClientSession clientSession = mongoClient.startSession()) {
-            MongoDbOperationContext ctx = new MongoDbOperationContext(clientSession, operation.getRepositoryType(), null, operation.getAnnotationMetadata());
+            MongoDbOperationContext ctx = new MongoDbOperationContext(clientSession, operation.getRepositoryType(), operation.getAnnotationMetadata());
             return updateBatch(ctx, operation, runtimeEntityRegistry.getEntity(operation.getRootEntity()));
         }
     }
@@ -168,7 +168,7 @@ public class DefaultMongoDbRepositoryOperations extends AbstractRepositoryOperat
     @Override
     public <T> int delete(DeleteOperation<T> operation) {
         try (ClientSession clientSession = mongoClient.startSession()) {
-            MongoDbOperationContext ctx = new MongoDbOperationContext(clientSession, operation.getRepositoryType(), null, operation.getAnnotationMetadata());
+            MongoDbOperationContext ctx = new MongoDbOperationContext(clientSession, operation.getRepositoryType(), operation.getAnnotationMetadata());
             RuntimePersistentEntity<T> persistentEntity = runtimeEntityRegistry.getEntity(operation.getRootEntity());
             MongoDbEntityOperation<T> op = createMongoDbDeleteOneOperation(ctx, persistentEntity, operation.getEntity());
             op.delete();
@@ -179,7 +179,7 @@ public class DefaultMongoDbRepositoryOperations extends AbstractRepositoryOperat
     @Override
     public <T> Optional<Number> deleteAll(DeleteBatchOperation<T> operation) {
         try (ClientSession clientSession = mongoClient.startSession()) {
-            MongoDbOperationContext ctx = new MongoDbOperationContext(clientSession, operation.getRepositoryType(), null, operation.getAnnotationMetadata());
+            MongoDbOperationContext ctx = new MongoDbOperationContext(clientSession, operation.getRepositoryType(), operation.getAnnotationMetadata());
             RuntimePersistentEntity<T> persistentEntity = runtimeEntityRegistry.getEntity(operation.getRootEntity());
             MongoDbEntitiesOperation<T> op = createMongoDbDeleteManyOperation(ctx, persistentEntity, operation);
             op.delete();
@@ -411,8 +411,8 @@ public class DefaultMongoDbRepositoryOperations extends AbstractRepositoryOperat
 
         private final ClientSession clientSession;
 
-        public MongoDbOperationContext(ClientSession clientSession, Class<?> repositoryType, Dialect dialect, AnnotationMetadata annotationMetadata) {
-            super(annotationMetadata, repositoryType, dialect);
+        public MongoDbOperationContext(ClientSession clientSession, Class<?> repositoryType, AnnotationMetadata annotationMetadata) {
+            super(annotationMetadata, repositoryType);
             this.clientSession = clientSession;
         }
     }

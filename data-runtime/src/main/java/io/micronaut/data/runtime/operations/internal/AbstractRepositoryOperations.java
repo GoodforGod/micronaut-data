@@ -353,12 +353,10 @@ public abstract class AbstractRepositoryOperations<Cnt, PS, Exc extends Exceptio
         public final Class<?> repositoryType;
         public final List<Association> associations = Collections.emptyList();
         public final Set<Object> persisted = new HashSet<>(5);
-        public final Dialect dialect;
 
-        public OperationContext(AnnotationMetadata annotationMetadata, Class<?> repositoryType, Dialect dialect) {
+        public OperationContext(AnnotationMetadata annotationMetadata, Class<?> repositoryType) {
             this.annotationMetadata = annotationMetadata;
             this.repositoryType = repositoryType;
-            this.dialect = dialect;
         }
     }
 
