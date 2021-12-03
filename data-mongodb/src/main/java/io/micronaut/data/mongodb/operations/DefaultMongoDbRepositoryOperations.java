@@ -34,8 +34,8 @@ import io.micronaut.data.model.runtime.UpdateBatchOperation;
 import io.micronaut.data.model.runtime.UpdateOperation;
 import io.micronaut.data.runtime.convert.DataConversionService;
 import io.micronaut.data.runtime.date.DateTimeProvider;
-import io.micronaut.data.runtime.operations.internal.AbstractEntitiesOperations;
-import io.micronaut.data.runtime.operations.internal.AbstractEntityOperations;
+import io.micronaut.data.runtime.operations.internal.AbstractSyncEntitiesOperations;
+import io.micronaut.data.runtime.operations.internal.AbstractSyncEntityOperations;
 import io.micronaut.data.runtime.operations.internal.AbstractRepositoryOperations;
 import io.micronaut.data.runtime.operations.internal.SyncCascadeOperations;
 import io.micronaut.http.codec.MediaTypeCodec;
@@ -53,7 +53,7 @@ import java.util.stream.Stream;
 
 @EachBean(MongoClient.class)
 @Internal
-public class DefaultMongoDbRepositoryOperations extends AbstractRepositoryOperations<ClientSession, Object, RuntimeException>
+public class DefaultMongoDbRepositoryOperations extends AbstractRepositoryOperations<ClientSession, Object>
         implements MongoDbRepositoryOperations, SyncCascadeOperations.SyncCascadeOperationsHelper<DefaultMongoDbRepositoryOperations.MongoDbOperationContext> {
 
     private final MongoClient mongoClient;
@@ -137,7 +137,7 @@ public class DefaultMongoDbRepositoryOperations extends AbstractRepositoryOperat
     public <T> T persist(InsertOperation<T> operation) {
         try (ClientSession clientSession = mongoClient.startSession()) {
             MongoDbOperationContext ctx = new MongoDbOperationContext(clientSession, operation.getRepositoryType(), operation.getAnnotationMetadata());
-            return persistOneSync(ctx, operation.getEntity(), runtimeEntityRegistry.getEntity(operation.getRootEntity()));
+            return persistOne(ctx, operation.getEntity(), runtimeEntityRegistry.getEntity(operation.getRootEntity()));
         }
     }
 
@@ -145,7 +145,7 @@ public class DefaultMongoDbRepositoryOperations extends AbstractRepositoryOperat
     public <T> Iterable<T> persistAll(InsertBatchOperation<T> operation) {
         try (ClientSession clientSession = mongoClient.startSession()) {
             MongoDbOperationContext ctx = new MongoDbOperationContext(clientSession, operation.getRepositoryType(), operation.getAnnotationMetadata());
-            return persistBatchSync(ctx, operation, runtimeEntityRegistry.getEntity(operation.getRootEntity()), null);
+            return persistBatch(ctx, operation, runtimeEntityRegistry.getEntity(operation.getRootEntity()), null);
         }
     }
 
@@ -153,7 +153,7 @@ public class DefaultMongoDbRepositoryOperations extends AbstractRepositoryOperat
     public <T> T update(UpdateOperation<T> operation) {
         try (ClientSession clientSession = mongoClient.startSession()) {
             MongoDbOperationContext ctx = new MongoDbOperationContext(clientSession, operation.getRepositoryType(), operation.getAnnotationMetadata());
-            return updateOneSync(ctx, operation.getEntity(), runtimeEntityRegistry.getEntity(operation.getRootEntity()));
+            return updateOne(ctx, operation.getEntity(), runtimeEntityRegistry.getEntity(operation.getRootEntity()));
         }
     }
 
@@ -217,14 +217,14 @@ public class DefaultMongoDbRepositoryOperations extends AbstractRepositoryOperat
     }
 
     @Override
-    public <T> T persistOneSync(MongoDbOperationContext ctx, T value, RuntimePersistentEntity<T> persistentEntity) {
+    public <T> T persistOne(MongoDbOperationContext ctx, T value, RuntimePersistentEntity<T> persistentEntity) {
         MongoDbEntityOperation<T> op = createMongoDbInsertOneOperation(ctx, persistentEntity, value);
         op.persist();
         return op.getEntity();
     }
 
     @Override
-    public <T> List<T> persistBatchSync(MongoDbOperationContext ctx, Iterable<T> values, RuntimePersistentEntity<T> persistentEntity, Predicate<T> predicate) {
+    public <T> List<T> persistBatch(MongoDbOperationContext ctx, Iterable<T> values, RuntimePersistentEntity<T> persistentEntity, Predicate<T> predicate) {
         MongoDbEntitiesOperation<T> op = createMongoDbInsertManyOperation(ctx, persistentEntity, values);
         if (predicate != null) {
             op.veto(predicate);
@@ -234,7 +234,7 @@ public class DefaultMongoDbRepositoryOperations extends AbstractRepositoryOperat
     }
 
     @Override
-    public <T> T updateOneSync(MongoDbOperationContext ctx, T value, RuntimePersistentEntity<T> persistentEntity) {
+    public <T> T updateOne(MongoDbOperationContext ctx, T value, RuntimePersistentEntity<T> persistentEntity) {
         MongoDbEntityOperation<T> op = createMongoDbReplaceOneOperation(ctx, persistentEntity, value);
         op.update();
         return op.getEntity();
@@ -361,7 +361,7 @@ public class DefaultMongoDbRepositoryOperations extends AbstractRepositoryOperat
         };
     }
 
-    abstract class MongoDbEntityOperation<T> extends AbstractEntityOperations<MongoDbOperationContext, T, RuntimeException> {
+    abstract class MongoDbEntityOperation<T> extends AbstractSyncEntityOperations<MongoDbOperationContext, T, RuntimeException> {
 
         protected long modifiedCount;
 
@@ -387,7 +387,7 @@ public class DefaultMongoDbRepositoryOperations extends AbstractRepositoryOperat
         }
     }
 
-    abstract class MongoDbEntitiesOperation<T> extends AbstractEntitiesOperations<MongoDbOperationContext, T, RuntimeException> {
+    abstract class MongoDbEntitiesOperation<T> extends AbstractSyncEntitiesOperations<MongoDbOperationContext, T, RuntimeException> {
 
         protected long modifiedCount;
 

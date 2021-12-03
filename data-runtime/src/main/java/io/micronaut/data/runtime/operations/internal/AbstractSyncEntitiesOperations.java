@@ -19,7 +19,7 @@ import java.util.function.Predicate;
 import java.util.stream.Collectors;
 import java.util.stream.Stream;
 
-public abstract class AbstractEntitiesOperations<Ctx extends AbstractRepositoryOperations.OperationContext, T, Exc extends Exception> extends SyncEntitiesOperations<T, Exc> {
+public abstract class AbstractSyncEntitiesOperations<Ctx extends AbstractRepositoryOperations.OperationContext, T, Exc extends Exception> extends SyncEntitiesOperations<T, Exc> {
 
     protected final Ctx ctx;
     protected final SyncCascadeOperations<Ctx> cascadeOperations;
@@ -28,13 +28,13 @@ public abstract class AbstractEntitiesOperations<Ctx extends AbstractRepositoryO
     protected final boolean insert;
     protected final boolean hasGeneratedId;
 
-    protected AbstractEntitiesOperations(Ctx ctx,
-                                       SyncCascadeOperations<Ctx> cascadeOperations,
-                                       ConversionService<?> conversionService,
-                                       EntityEventListener<Object> entityEventListener,
-                                       RuntimePersistentEntity<T> persistentEntity,
-                                       Iterable<T> entities,
-                                       boolean insert) {
+    protected AbstractSyncEntitiesOperations(Ctx ctx,
+                                             SyncCascadeOperations<Ctx> cascadeOperations,
+                                             ConversionService<?> conversionService,
+                                             EntityEventListener<Object> entityEventListener,
+                                             RuntimePersistentEntity<T> persistentEntity,
+                                             Iterable<T> entities,
+                                             boolean insert) {
         super(entityEventListener, persistentEntity, conversionService);
         this.cascadeOperations = cascadeOperations;
         this.conversionService = conversionService;

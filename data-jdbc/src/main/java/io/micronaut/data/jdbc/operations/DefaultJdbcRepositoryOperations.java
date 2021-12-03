@@ -69,8 +69,8 @@ import io.micronaut.data.runtime.mapper.sql.SqlResultEntityTypeMapper;
 import io.micronaut.data.runtime.mapper.sql.SqlTypeMapper;
 import io.micronaut.data.runtime.operations.ExecutorAsyncOperations;
 import io.micronaut.data.runtime.operations.ExecutorReactiveOperations;
-import io.micronaut.data.runtime.operations.internal.AbstractEntitiesOperations;
-import io.micronaut.data.runtime.operations.internal.AbstractEntityOperations;
+import io.micronaut.data.runtime.operations.internal.AbstractSyncEntitiesOperations;
+import io.micronaut.data.runtime.operations.internal.AbstractSyncEntityOperations;
 import io.micronaut.data.runtime.operations.internal.AbstractSqlRepositoryOperations;
 import io.micronaut.data.runtime.operations.internal.DBOperation;
 import io.micronaut.data.runtime.operations.internal.OpContext;
@@ -188,7 +188,7 @@ public final class DefaultJdbcRepositoryOperations extends AbstractSqlRepository
     }
 
     @Override
-    public <T> T persistOneSync(JdbcOperationContext ctx, T value, RuntimePersistentEntity<T> persistentEntity) {
+    public <T> T persistOne(JdbcOperationContext ctx, T value, RuntimePersistentEntity<T> persistentEntity) {
         DBOperation childSqlPersistOperation = resolveEntityInsert(ctx.annotationMetadata, ctx.repositoryType, value.getClass(), persistentEntity);
         JdbcEntityOperations<T> persistOneOp = new JdbcEntityOperations<>(ctx, childSqlPersistOperation, persistentEntity, value, true);
         persistOneOp.persist();
@@ -196,9 +196,9 @@ public final class DefaultJdbcRepositoryOperations extends AbstractSqlRepository
     }
 
     @Override
-    public <T> List<T> persistBatchSync(JdbcOperationContext ctx, Iterable<T> values,
-                                         RuntimePersistentEntity<T> childPersistentEntity,
-                                         Predicate<T> predicate) {
+    public <T> List<T> persistBatch(JdbcOperationContext ctx, Iterable<T> values,
+                                    RuntimePersistentEntity<T> childPersistentEntity,
+                                    Predicate<T> predicate) {
         DBOperation childSqlPersistOperation = resolveEntityInsert(
                 ctx.annotationMetadata,
                 ctx.repositoryType,
@@ -212,7 +212,7 @@ public final class DefaultJdbcRepositoryOperations extends AbstractSqlRepository
     }
 
     @Override
-    public <T> T updateOneSync(JdbcOperationContext ctx, T value, RuntimePersistentEntity<T> persistentEntity) {
+    public <T> T updateOne(JdbcOperationContext ctx, T value, RuntimePersistentEntity<T> persistentEntity) {
         DBOperation childSqlUpdateOperation = resolveEntityUpdate(ctx.annotationMetadata, ctx.repositoryType, value.getClass(), persistentEntity);
         JdbcEntityOperations<T> op = new JdbcEntityOperations<>(ctx, persistentEntity, value, childSqlUpdateOperation);
         op.update();
@@ -848,7 +848,7 @@ public final class DefaultJdbcRepositoryOperations extends AbstractSqlRepository
         };
     }
 
-    private final class JdbcEntityOperations<T> extends AbstractEntityOperations<JdbcOperationContext, T, SQLException> {
+    private final class JdbcEntityOperations<T> extends AbstractSyncEntityOperations<JdbcOperationContext, T, SQLException> {
 
         private final DBOperation dbOperation;
         private Integer rowsUpdated;
@@ -915,7 +915,7 @@ public final class DefaultJdbcRepositoryOperations extends AbstractSqlRepository
         }
     }
 
-    private final class JdbcEntitiesOperations<T> extends AbstractEntitiesOperations<JdbcOperationContext, T, SQLException> {
+    private final class JdbcEntitiesOperations<T> extends AbstractSyncEntitiesOperations<JdbcOperationContext, T, SQLException> {
 
         private final DBOperation dbOperation;
         private int rowsUpdated;

@@ -73,7 +73,7 @@ import java.util.stream.Collectors;
 @SuppressWarnings("FileLength")
 @Internal
 public abstract class AbstractSqlRepositoryOperations<Cnt, RS, PS, Exc extends Exception>
-        extends AbstractRepositoryOperations<Cnt, PS, Exc>
+        extends AbstractRepositoryOperations<Cnt, PS>
         implements ApplicationContextProvider, OpContext<Cnt, PS> {
     protected static final Logger QUERY_LOG = DataSettings.QUERY_LOG;
     protected static final SqlQueryBuilder DEFAULT_SQL_BUILDER = new SqlQueryBuilder();

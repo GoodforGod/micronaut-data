@@ -49,7 +49,7 @@ public class SyncCascadeOperations<Ctx extends OperationContext> extends Abstrac
                     if (LOG.isDebugEnabled()) {
                         LOG.debug("Cascading PERSIST for '{}' association: '{}'", persistentEntity.getName(), cascadeOp.ctx.associations);
                     }
-                    Object persisted = helper.persistOneSync(ctx, child, childPersistentEntity);
+                    Object persisted = helper.persistOne(ctx, child, childPersistentEntity);
                     entity = afterCascadedOne(entity, cascadeOp.ctx.associations, child, persisted);
                     child = persisted;
                 } else if (hasId && (cascadeType == Relation.Cascade.UPDATE)) {
@@ -57,7 +57,7 @@ public class SyncCascadeOperations<Ctx extends OperationContext> extends Abstrac
                         LOG.debug("Cascading MERGE for '{}' ({}) association: '{}'", persistentEntity.getName(),
                                 persistentEntity.getIdentity().getProperty().get(entity), cascadeOp.ctx.associations);
                     }
-                    Object updated = helper.updateOneSync(ctx, child, childPersistentEntity);
+                    Object updated = helper.updateOne(ctx, child, childPersistentEntity);
                     entity = afterCascadedOne(entity, cascadeOp.ctx.associations, child, updated);
                     child = updated;
                 }
@@ -84,9 +84,9 @@ public class SyncCascadeOperations<Ctx extends OperationContext> extends Abstrac
                         RuntimePersistentProperty<Object> identity = childPersistentEntity.getIdentity();
                         Object value;
                         if (identity.getProperty().get(child) == null) {
-                            value = helper.persistOneSync(ctx, child, childPersistentEntity);
+                            value = helper.persistOne(ctx, child, childPersistentEntity);
                         } else {
-                            value = helper.updateOneSync(ctx, child, childPersistentEntity);
+                            value = helper.updateOne(ctx, child, childPersistentEntity);
                         }
                         iterator.set(value);
                     }
@@ -94,7 +94,7 @@ public class SyncCascadeOperations<Ctx extends OperationContext> extends Abstrac
                     if (helper.supportsBatch(ctx, childPersistentEntity)) {
                         RuntimePersistentProperty<Object> identity = childPersistentEntity.getIdentity();
                         Predicate<Object> veto = val -> ctx.persisted.contains(val) || identity.getProperty().get(val) != null;
-                        entities = helper.persistBatchSync(ctx, cascadeManyOp.children, childPersistentEntity, veto);
+                        entities = helper.persistBatch(ctx, cascadeManyOp.children, childPersistentEntity, veto);
                     } else {
                         entities = CollectionUtils.iterableToList(cascadeManyOp.children);
                         for (ListIterator<Object> iterator = entities.listIterator(); iterator.hasNext(); ) {
@@ -106,7 +106,7 @@ public class SyncCascadeOperations<Ctx extends OperationContext> extends Abstrac
                             if (identity.getProperty().get(child) != null) {
                                 continue;
                             }
-                            Object persisted = helper.persistOneSync(ctx, child, childPersistentEntity);
+                            Object persisted = helper.persistOne(ctx, child, childPersistentEntity);
                             iterator.set(persisted);
                         }
                     }
@@ -141,13 +141,13 @@ public class SyncCascadeOperations<Ctx extends OperationContext> extends Abstrac
 
         boolean supportsBatch(Ctx ctx, RuntimePersistentEntity<?> persistentEntity);
 
-        <T> T persistOneSync(Ctx ctx, T child, RuntimePersistentEntity<T> childPersistentEntity);
+        <T> T persistOne(Ctx ctx, T child, RuntimePersistentEntity<T> childPersistentEntity);
 
-        <T> List<T> persistBatchSync(Ctx ctx, Iterable<T> values,
-                                      RuntimePersistentEntity<T> childPersistentEntity,
-                                      Predicate<T> predicate);
+        <T> List<T> persistBatch(Ctx ctx, Iterable<T> values,
+                                 RuntimePersistentEntity<T> childPersistentEntity,
+                                 Predicate<T> predicate);
 
-        <T> T updateOneSync(Ctx ctx, T child, RuntimePersistentEntity<T> childPersistentEntity);
+        <T> T updateOne(Ctx ctx, T child, RuntimePersistentEntity<T> childPersistentEntity);
 
         void persistManyAssociationSync(Ctx ctx,
                                         RuntimeAssociation runtimeAssociation,

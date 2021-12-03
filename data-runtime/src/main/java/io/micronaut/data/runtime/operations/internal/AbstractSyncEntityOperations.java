@@ -15,7 +15,7 @@ import java.util.function.Consumer;
 import java.util.function.Function;
 import java.util.function.Predicate;
 
-public abstract class AbstractEntityOperations<Ctx extends OperationContext, T, Exc extends Exception> extends SyncEntityOperations<T, Exc> {
+public abstract class AbstractSyncEntityOperations<Ctx extends OperationContext, T, Exc extends Exception> extends SyncEntityOperations<T, Exc> {
 
     protected SyncCascadeOperations<Ctx> cascadeOperations;
     protected final Ctx ctx;
@@ -24,13 +24,13 @@ public abstract class AbstractEntityOperations<Ctx extends OperationContext, T, 
     protected T entity;
     protected Map<QueryParameterBinding, Object> previousValues;
 
-    protected AbstractEntityOperations(Ctx ctx,
-                                     SyncCascadeOperations<Ctx> cascadeOperations,
-                                     EntityEventListener<Object> entityEventListener,
-                                     RuntimePersistentEntity<T> persistentEntity,
-                                     ConversionService<?> conversionService,
-                                     T entity,
-                                     boolean insert) {
+    protected AbstractSyncEntityOperations(Ctx ctx,
+                                           SyncCascadeOperations<Ctx> cascadeOperations,
+                                           EntityEventListener<Object> entityEventListener,
+                                           RuntimePersistentEntity<T> persistentEntity,
+                                           ConversionService<?> conversionService,
+                                           T entity,
+                                           boolean insert) {
         super(entityEventListener, persistentEntity, conversionService);
         this.cascadeOperations = cascadeOperations;
         this.ctx = ctx;

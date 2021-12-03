@@ -21,10 +21,7 @@ import io.micronaut.core.annotation.AnnotationMetadata;
 import io.micronaut.core.annotation.Internal;
 import io.micronaut.core.annotation.NonNull;
 import io.micronaut.core.annotation.Nullable;
-import io.micronaut.core.beans.BeanProperty;
-import io.micronaut.core.convert.ArgumentConversionContext;
 import io.micronaut.core.convert.ConversionContext;
-import io.micronaut.core.convert.exceptions.ConversionErrorException;
 import io.micronaut.core.type.Argument;
 import io.micronaut.core.util.CollectionUtils;
 import io.micronaut.data.annotation.Relation;
@@ -69,7 +66,7 @@ import java.util.stream.Stream;
  */
 @SuppressWarnings("FileLength")
 @Internal
-public abstract class AbstractRepositoryOperations<Cnt, PS, Exc extends Exception>
+public abstract class AbstractRepositoryOperations<Cnt, PS>
         implements ApplicationContextProvider, OpContext<Cnt, PS> {
     protected final MediaTypeCodec jsonCodec;
     protected final EntityEventListener<Object> entityEventRegistry;
@@ -135,28 +132,6 @@ public abstract class AbstractRepositoryOperations<Cnt, PS, Exc extends Exceptio
         final DefaultEntityEventContext<T> event = new DefaultEntityEventContext<>(pe, entity);
         entityEventRegistry.postLoad((EntityEventContext<Object>) event);
         return event.getEntity();
-    }
-
-    private <X, Y> X setProperty(BeanProperty<X, Y> beanProperty, X x, Y y) {
-        if (beanProperty.isReadOnly()) {
-            return beanProperty.withValue(x, y);
-        }
-        beanProperty.set(x, y);
-        return x;
-    }
-
-    private <B, T> B convertAndSetWithValue(BeanProperty<B, T> beanProperty, B bean, T value) {
-        Argument<T> argument = beanProperty.asArgument();
-        final ArgumentConversionContext<T> context = ConversionContext.of(argument);
-        T convertedValue = conversionService.convert(value, context).orElseThrow(() ->
-                new ConversionErrorException(argument, context.getLastError()
-                        .orElse(() -> new IllegalArgumentException("Value [" + value + "] cannot be converted to type : " + beanProperty.getType())))
-        );
-        if (beanProperty.isReadOnly()) {
-            return beanProperty.withValue(bean, convertedValue);
-        }
-        beanProperty.set(bean, convertedValue);
-        return bean;
     }
 
     /**
