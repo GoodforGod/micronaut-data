@@ -141,13 +141,13 @@ public class SyncCascadeOperations<Ctx extends OperationContext> extends Abstrac
 
         boolean supportsBatch(Ctx ctx, RuntimePersistentEntity<?> persistentEntity);
 
-        Object persistOneSync(Ctx ctx, Object child, RuntimePersistentEntity<Object> childPersistentEntity);
+        <T> T persistOneSync(Ctx ctx, T child, RuntimePersistentEntity<T> childPersistentEntity);
 
-        List<Object> persistBatchSync(Ctx ctx, Iterable<Object> values,
-                                      RuntimePersistentEntity<Object> childPersistentEntity,
-                                      Predicate<Object> predicate);
+        <T> List<T> persistBatchSync(Ctx ctx, Iterable<T> values,
+                                      RuntimePersistentEntity<T> childPersistentEntity,
+                                      Predicate<T> predicate);
 
-        Object updateOneSync(Ctx ctx, Object child, RuntimePersistentEntity<Object> childPersistentEntity);
+        <T> T updateOneSync(Ctx ctx, T child, RuntimePersistentEntity<T> childPersistentEntity);
 
         void persistManyAssociationSync(Ctx ctx,
                                         RuntimeAssociation runtimeAssociation,

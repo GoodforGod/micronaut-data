@@ -27,9 +27,6 @@ import io.micronaut.core.convert.ArgumentConversionContext;
 import io.micronaut.core.convert.ConversionContext;
 import io.micronaut.core.type.Argument;
 import io.micronaut.core.util.ArgumentUtils;
-import io.micronaut.core.util.CollectionUtils;
-import io.micronaut.data.annotation.Relation;
-import io.micronaut.data.event.EntityEventContext;
 import io.micronaut.data.exceptions.DataAccessException;
 import io.micronaut.data.jdbc.convert.JdbcConversionContext;
 import io.micronaut.data.jdbc.mapper.ColumnIndexResultSetReader;
@@ -63,7 +60,6 @@ import io.micronaut.data.operations.reactive.ReactiveRepositoryOperations;
 import io.micronaut.data.runtime.convert.DataConversionService;
 import io.micronaut.data.runtime.convert.RuntimePersistentPropertyConversionContext;
 import io.micronaut.data.runtime.date.DateTimeProvider;
-import io.micronaut.data.runtime.event.DefaultEntityEventContext;
 import io.micronaut.data.runtime.mapper.DTOMapper;
 import io.micronaut.data.runtime.mapper.ResultConsumer;
 import io.micronaut.data.runtime.mapper.ResultReader;
@@ -73,14 +69,14 @@ import io.micronaut.data.runtime.mapper.sql.SqlResultEntityTypeMapper;
 import io.micronaut.data.runtime.mapper.sql.SqlTypeMapper;
 import io.micronaut.data.runtime.operations.ExecutorAsyncOperations;
 import io.micronaut.data.runtime.operations.ExecutorReactiveOperations;
+import io.micronaut.data.runtime.operations.internal.AbstractEntitiesOperations;
+import io.micronaut.data.runtime.operations.internal.AbstractEntityOperations;
 import io.micronaut.data.runtime.operations.internal.AbstractSqlRepositoryOperations;
 import io.micronaut.data.runtime.operations.internal.DBOperation;
 import io.micronaut.data.runtime.operations.internal.OpContext;
 import io.micronaut.data.runtime.operations.internal.StoredQuerySqlOperation;
 import io.micronaut.data.runtime.operations.internal.StoredSqlOperation;
 import io.micronaut.data.runtime.operations.internal.SyncCascadeOperations;
-import io.micronaut.data.runtime.operations.internal.SyncEntitiesOperations;
-import io.micronaut.data.runtime.operations.internal.SyncEntityOperations;
 import io.micronaut.data.runtime.support.AbstractConversionContext;
 import io.micronaut.http.codec.MediaTypeCodec;
 import io.micronaut.transaction.TransactionOperations;
@@ -98,7 +94,6 @@ import java.sql.SQLException;
 import java.sql.Statement;
 import java.util.ArrayList;
 import java.util.Arrays;
-import java.util.Collection;
 import java.util.Iterator;
 import java.util.List;
 import java.util.Map;
@@ -111,7 +106,6 @@ import java.util.concurrent.ExecutorService;
 import java.util.concurrent.Executors;
 import java.util.concurrent.atomic.AtomicBoolean;
 import java.util.function.Consumer;
-import java.util.function.Function;
 import java.util.function.Predicate;
 import java.util.stream.Collectors;
 import java.util.stream.Stream;
@@ -194,33 +188,33 @@ public final class DefaultJdbcRepositoryOperations extends AbstractSqlRepository
     }
 
     @Override
-    public Object persistOneSync(JdbcOperationContext ctx, Object child, RuntimePersistentEntity<Object> childPersistentEntity) {
-        DBOperation childSqlPersistOperation = resolveEntityInsert(ctx.annotationMetadata, ctx.repositoryType, child.getClass(), childPersistentEntity);
-        JdbcEntityOperations<Object> persistOneOp = new JdbcEntityOperations<>(ctx, childSqlPersistOperation, childPersistentEntity, child, true);
+    public <T> T persistOneSync(JdbcOperationContext ctx, T value, RuntimePersistentEntity<T> persistentEntity) {
+        DBOperation childSqlPersistOperation = resolveEntityInsert(ctx.annotationMetadata, ctx.repositoryType, value.getClass(), persistentEntity);
+        JdbcEntityOperations<T> persistOneOp = new JdbcEntityOperations<>(ctx, childSqlPersistOperation, persistentEntity, value, true);
         persistOneOp.persist();
         return persistOneOp.getEntity();
     }
 
     @Override
-    public List<Object> persistBatchSync(JdbcOperationContext ctx, Iterable<Object> values,
-                                         RuntimePersistentEntity<Object> childPersistentEntity,
-                                         Predicate<Object> predicate) {
+    public <T> List<T> persistBatchSync(JdbcOperationContext ctx, Iterable<T> values,
+                                         RuntimePersistentEntity<T> childPersistentEntity,
+                                         Predicate<T> predicate) {
         DBOperation childSqlPersistOperation = resolveEntityInsert(
                 ctx.annotationMetadata,
                 ctx.repositoryType,
                 childPersistentEntity.getIntrospection().getBeanType(),
                 childPersistentEntity
         );
-        JdbcEntitiesOperations<Object> persistBatchOp = new JdbcEntitiesOperations<>(ctx, childPersistentEntity, values, childSqlPersistOperation, true);
+        JdbcEntitiesOperations<T> persistBatchOp = new JdbcEntitiesOperations<>(ctx, childPersistentEntity, values, childSqlPersistOperation, true);
         persistBatchOp.veto(predicate);
         persistBatchOp.persist();
         return persistBatchOp.getEntities();
     }
 
     @Override
-    public Object updateOneSync(JdbcOperationContext ctx, Object child, RuntimePersistentEntity<Object> childPersistentEntity) {
-        DBOperation childSqlUpdateOperation = resolveEntityUpdate(ctx.annotationMetadata, ctx.repositoryType, child.getClass(), childPersistentEntity);
-        JdbcEntityOperations<Object> op = new JdbcEntityOperations<>(ctx, childPersistentEntity, child, childSqlUpdateOperation);
+    public <T> T updateOneSync(JdbcOperationContext ctx, T value, RuntimePersistentEntity<T> persistentEntity) {
+        DBOperation childSqlUpdateOperation = resolveEntityUpdate(ctx.annotationMetadata, ctx.repositoryType, value.getClass(), persistentEntity);
+        JdbcEntityOperations<T> op = new JdbcEntityOperations<>(ctx, persistentEntity, value, childSqlUpdateOperation);
         op.update();
         return op.getEntity();
     }
@@ -603,7 +597,7 @@ public final class DefaultJdbcRepositoryOperations extends AbstractSqlRepository
             JdbcOperationContext ctx = new JdbcOperationContext(annotationMetadata, repositoryType, queryBuilder.dialect(), status.getConnection());
             JdbcEntityOperations<T> op = new JdbcEntityOperations<>(ctx, getEntity(operation.getRootEntity()), operation.getEntity(), dbOperation);
             op.update();
-            return op.entity;
+            return op.getEntity();
         });
     }
 
@@ -623,7 +617,7 @@ public final class DefaultJdbcRepositoryOperations extends AbstractSqlRepository
                         .map(updateOp -> {
                             JdbcEntityOperations<T> op = new JdbcEntityOperations<>(ctx, persistentEntity, updateOp.getEntity(), dbOperation);
                             op.update();
-                            return op.entity;
+                            return op.getEntity();
                         })
                         .collect(Collectors.toList());
             }
@@ -644,7 +638,7 @@ public final class DefaultJdbcRepositoryOperations extends AbstractSqlRepository
             JdbcEntityOperations<T> op = new JdbcEntityOperations<>(ctx, new StoredQuerySqlOperation(queryBuilder, operation.getStoredQuery()), getEntity(operation.getRootEntity()), operation.getEntity(), true);
             op.persist();
             return op;
-        }).entity;
+        }).getEntity();
     }
 
     @Nullable
@@ -689,7 +683,7 @@ public final class DefaultJdbcRepositoryOperations extends AbstractSqlRepository
                         .map(persistOp -> {
                             JdbcEntityOperations<T> op = new JdbcEntityOperations<>(ctx, dbOperation, persistentEntity, persistOp.getEntity(), true);
                             op.persist();
-                            return op.entity;
+                            return op.getEntity();
                         })
                         .collect(Collectors.toList());
             } else {
@@ -854,13 +848,9 @@ public final class DefaultJdbcRepositoryOperations extends AbstractSqlRepository
         };
     }
 
-    private final class JdbcEntityOperations<T> extends SyncEntityOperations<T, SQLException> {
+    private final class JdbcEntityOperations<T> extends AbstractEntityOperations<JdbcOperationContext, T, SQLException> {
 
-        private final JdbcOperationContext ctx;
         private final DBOperation dbOperation;
-        private final boolean insert;
-        private final boolean hasGeneratedId;
-        private T entity;
         private Integer rowsUpdated;
         private Map<QueryParameterBinding, Object> previousValues;
 
@@ -869,23 +859,11 @@ public final class DefaultJdbcRepositoryOperations extends AbstractSqlRepository
         }
 
         private JdbcEntityOperations(JdbcOperationContext ctx, DBOperation dbOperation, RuntimePersistentEntity<T> persistentEntity, T entity, boolean insert) {
-            super(entityEventRegistry, persistentEntity, DefaultJdbcRepositoryOperations.this.conversionService);
-            this.ctx = ctx;
+            super(ctx,
+                    DefaultJdbcRepositoryOperations.this.cascadeOperations,
+                    entityEventRegistry, persistentEntity,
+                    DefaultJdbcRepositoryOperations.this.conversionService, entity, insert);
             this.dbOperation = dbOperation;
-            this.insert = insert;
-            this.hasGeneratedId = insert && persistentEntity.getIdentity() != null && persistentEntity.getIdentity().isGenerated();
-            Objects.requireNonNull(entity, "Passed entity cannot be null");
-            this.entity = entity;
-        }
-
-        @Override
-        protected void cascadePre(Relation.Cascade cascadeType) {
-            entity = cascadeOperations.cascadeEntity(ctx, entity, persistentEntity, false, cascadeType);
-        }
-
-        @Override
-        protected void cascadePost(Relation.Cascade cascadeType) {
-            entity = cascadeOperations.cascadeEntity(ctx, entity, persistentEntity, true, cascadeType);
         }
 
         @Override
@@ -935,55 +913,11 @@ public final class DefaultJdbcRepositoryOperations extends AbstractSqlRepository
                 }
             }
         }
-
-//        @Override
-//        protected void executeUpdate(OpContext<Connection, PreparedStatement> context, Connection connection, DBOperation2<Integer, Integer, SQLException> fn) throws SQLException {
-//            try (PreparedStatement ps = prepare(connection, dbOperation)) {
-//                dbOperation.setParameters(context, connection, ps, persistentEntity, entity, previousValues);
-//                int ru = ps.executeUpdate();
-//                fn.process(1, ru);
-//                rowsUpdated = ru;
-//            }
-//        }
-
-        @Override
-        protected boolean triggerPre(Function<EntityEventContext<Object>, Boolean> fn) {
-            final DefaultEntityEventContext<T> event = new DefaultEntityEventContext<>(persistentEntity, entity);
-            boolean vetoed = !fn.apply((EntityEventContext<Object>) event);
-            if (vetoed) {
-                return true;
-            }
-            T newEntity = event.getEntity();
-            if (entity != newEntity) {
-                entity = newEntity;
-            }
-            return false;
-        }
-
-        @Override
-        protected void triggerPost(Consumer<EntityEventContext<Object>> fn) {
-            final DefaultEntityEventContext<T> event = new DefaultEntityEventContext<>(persistentEntity, entity);
-            fn.accept((EntityEventContext<Object>) event);
-        }
-
-        @Override
-        public void veto(Predicate<T> predicate) {
-            throw new IllegalStateException("Not supported");
-        }
-
-        @Override
-        public T getEntity() {
-            return entity;
-        }
     }
 
-    private final class JdbcEntitiesOperations<T> extends SyncEntitiesOperations<T, SQLException> {
+    private final class JdbcEntitiesOperations<T> extends AbstractEntitiesOperations<JdbcOperationContext, T, SQLException> {
 
-        private final JdbcOperationContext ctx;
         private final DBOperation dbOperation;
-        private final List<Data> entities;
-        private final boolean insert;
-        private final boolean hasGeneratedId;
         private int rowsUpdated;
 
         private JdbcEntitiesOperations(JdbcOperationContext ctx, RuntimePersistentEntity<T> persistentEntity, Iterable<T> entities, DBOperation dbOperation) {
@@ -991,46 +925,11 @@ public final class DefaultJdbcRepositoryOperations extends AbstractSqlRepository
         }
 
         private JdbcEntitiesOperations(JdbcOperationContext ctx, RuntimePersistentEntity<T> persistentEntity, Iterable<T> entities, DBOperation dbOperation, boolean insert) {
-            super(entityEventRegistry, persistentEntity, DefaultJdbcRepositoryOperations.this.conversionService);
-            this.ctx = ctx;
+            super(ctx,
+                    DefaultJdbcRepositoryOperations.this.cascadeOperations,
+                    DefaultJdbcRepositoryOperations.this.conversionService,
+                    entityEventRegistry, persistentEntity, entities, insert);
             this.dbOperation = dbOperation;
-            this.insert = insert;
-            this.hasGeneratedId = insert && persistentEntity.getIdentity() != null && persistentEntity.getIdentity().isGenerated();
-            Objects.requireNonNull(entities, "Entities cannot be null");
-            if (!entities.iterator().hasNext()) {
-                throw new IllegalStateException("Entities cannot be empty");
-            }
-            Stream<T> stream;
-            if (entities instanceof Collection) {
-                stream = ((Collection) entities).stream();
-            } else {
-                stream = CollectionUtils.iterableToList(entities).stream();
-            }
-            this.entities = stream.map(entity -> {
-                Data d = new Data();
-                d.entity = entity;
-                return d;
-            }).collect(Collectors.toList());
-        }
-
-        @Override
-        protected void cascadePre(Relation.Cascade cascadeType) {
-            for (Data d : entities) {
-                if (d.vetoed) {
-                    continue;
-                }
-                d.entity = cascadeOperations.cascadeEntity(ctx, d.entity, persistentEntity, false, cascadeType);
-            }
-        }
-
-        @Override
-        protected void cascadePost(Relation.Cascade cascadeType) {
-            for (Data d : entities) {
-                if (d.vetoed) {
-                    continue;
-                }
-                d.entity = cascadeOperations.cascadeEntity(ctx, d.entity, persistentEntity, true, cascadeType);
-            }
         }
 
         @Override
@@ -1053,46 +952,6 @@ public final class DefaultJdbcRepositoryOperations extends AbstractSqlRepository
                 }
             } else {
                 return connection.prepareStatement(dbOperation.getQuery());
-            }
-        }
-
-        @Override
-        public void veto(Predicate<T> predicate) {
-            for (Data d : entities) {
-                if (d.vetoed) {
-                    continue;
-                }
-                d.vetoed = predicate.test(d.entity);
-            }
-        }
-
-        @Override
-        protected boolean triggerPre(Function<EntityEventContext<Object>, Boolean> fn) {
-            boolean allVetoed = true;
-            for (Data d : entities) {
-                if (d.vetoed) {
-                    continue;
-                }
-                final DefaultEntityEventContext<T> event = new DefaultEntityEventContext<>(persistentEntity, d.entity);
-                if (!fn.apply((EntityEventContext<Object>) event)) {
-                    d.vetoed = true;
-                    continue;
-                }
-                d.entity = event.getEntity();
-                allVetoed = false;
-            }
-            return allVetoed;
-        }
-
-        @Override
-        protected void triggerPost(Consumer<EntityEventContext<Object>> fn) {
-            for (Data d : entities) {
-                if (d.vetoed) {
-                    continue;
-                }
-                final DefaultEntityEventContext<T> event = new DefaultEntityEventContext<>(persistentEntity, d.entity);
-                fn.accept((EntityEventContext<Object>) event);
-                d.entity = event.getEntity();
             }
         }
 
@@ -1142,15 +1001,6 @@ public final class DefaultJdbcRepositoryOperations extends AbstractSqlRepository
             }
         }
 
-        public List<T> getEntities() {
-            return entities.stream().map(d -> d.entity).collect(Collectors.toList());
-        }
-
-        class Data {
-            T entity;
-            Map<QueryParameterBinding, Object> previousValues;
-            boolean vetoed = false;
-        }
     }
 
     protected static class JdbcOperationContext extends OperationContext {

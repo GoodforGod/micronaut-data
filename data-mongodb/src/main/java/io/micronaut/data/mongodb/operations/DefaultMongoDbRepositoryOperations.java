@@ -5,56 +5,64 @@ import com.mongodb.client.MongoClient;
 import com.mongodb.client.MongoCollection;
 import com.mongodb.client.MongoDatabase;
 import com.mongodb.client.model.Filters;
+import com.mongodb.client.result.DeleteResult;
+import com.mongodb.client.result.InsertManyResult;
 import com.mongodb.client.result.InsertOneResult;
+import com.mongodb.client.result.UpdateResult;
 import io.micronaut.context.annotation.EachBean;
+import io.micronaut.core.annotation.AnnotationMetadata;
 import io.micronaut.core.annotation.Internal;
 import io.micronaut.core.beans.BeanProperty;
 import io.micronaut.core.convert.ConversionContext;
 import io.micronaut.core.type.Argument;
-import io.micronaut.data.annotation.Relation;
-import io.micronaut.data.event.EntityEventContext;
+import io.micronaut.data.exceptions.DataAccessException;
 import io.micronaut.data.model.DataType;
 import io.micronaut.data.model.Page;
 import io.micronaut.data.model.query.builder.sql.Dialect;
 import io.micronaut.data.model.runtime.AttributeConverterRegistry;
 import io.micronaut.data.model.runtime.DeleteBatchOperation;
 import io.micronaut.data.model.runtime.DeleteOperation;
+import io.micronaut.data.model.runtime.InsertBatchOperation;
 import io.micronaut.data.model.runtime.InsertOperation;
 import io.micronaut.data.model.runtime.PagedQuery;
 import io.micronaut.data.model.runtime.PreparedQuery;
+import io.micronaut.data.model.runtime.RuntimeAssociation;
 import io.micronaut.data.model.runtime.RuntimeEntityRegistry;
 import io.micronaut.data.model.runtime.RuntimePersistentEntity;
 import io.micronaut.data.model.runtime.RuntimePersistentProperty;
+import io.micronaut.data.model.runtime.UpdateBatchOperation;
 import io.micronaut.data.model.runtime.UpdateOperation;
 import io.micronaut.data.runtime.convert.DataConversionService;
 import io.micronaut.data.runtime.date.DateTimeProvider;
-import io.micronaut.data.runtime.event.DefaultEntityEventContext;
+import io.micronaut.data.runtime.operations.internal.AbstractEntitiesOperations;
+import io.micronaut.data.runtime.operations.internal.AbstractEntityOperations;
 import io.micronaut.data.runtime.operations.internal.AbstractRepositoryOperations;
-import io.micronaut.data.runtime.operations.internal.DBOperation;
-import io.micronaut.data.runtime.operations.internal.EntityOperations;
-import io.micronaut.data.runtime.operations.internal.OpContext;
+import io.micronaut.data.runtime.operations.internal.SyncCascadeOperations;
 import io.micronaut.http.codec.MediaTypeCodec;
 import org.bson.BsonValue;
 import org.bson.conversions.Bson;
 
 import java.io.Serializable;
 import java.util.List;
+import java.util.Map;
 import java.util.Optional;
 import java.util.UUID;
-import java.util.function.Consumer;
-import java.util.function.Function;
 import java.util.function.Predicate;
+import java.util.stream.Collectors;
 import java.util.stream.Stream;
 
 @EachBean(MongoClient.class)
 @Internal
-public class DefaultMongoDbRepositoryOperations extends AbstractRepositoryOperations<ClientSession, Object, RuntimeException> implements MongoDbRepositoryOperations {
+public class DefaultMongoDbRepositoryOperations extends AbstractRepositoryOperations<ClientSession, Object, RuntimeException>
+        implements MongoDbRepositoryOperations, SyncCascadeOperations.SyncCascadeOperationsHelper<DefaultMongoDbRepositoryOperations.MongoDbOperationContext> {
 
     private final MongoClient mongoClient;
+    private final SyncCascadeOperations<MongoDbOperationContext> cascadeOperations;
 
     /**
      * Default constructor.
-     *  @param codecs                     The media type codecs
+     *
+     * @param codecs                     The media type codecs
      * @param dateTimeProvider           The date time provider
      * @param runtimeEntityRegistry      The entity registry
      * @param conversionService          The conversion service
@@ -69,6 +77,7 @@ public class DefaultMongoDbRepositoryOperations extends AbstractRepositoryOperat
                                                  MongoClient mongoClient) {
         super(codecs, dateTimeProvider, runtimeEntityRegistry, conversionService, attributeConverterRegistry);
         this.mongoClient = mongoClient;
+        this.cascadeOperations = new SyncCascadeOperations<>(conversionService, this);
     }
 
     @Override
@@ -127,45 +136,60 @@ public class DefaultMongoDbRepositoryOperations extends AbstractRepositoryOperat
     @Override
     public <T> T persist(InsertOperation<T> operation) {
         try (ClientSession clientSession = mongoClient.startSession()) {
-            RuntimePersistentEntity<T> persistentEntity = runtimeEntityRegistry.getEntity(operation.getRootEntity());
-            MongoCollection<T> collection = getCollection(persistentEntity);
+            MongoDbOperationContext ctx = new MongoDbOperationContext(clientSession, operation.getRepositoryType(), null, operation.getAnnotationMetadata());
+            return persistOneSync(ctx, operation.getEntity(), runtimeEntityRegistry.getEntity(operation.getRootEntity()));
+        }
+    }
 
-            MongoDbOperation<T> op = new MongoDbOperation<T>(persistentEntity, operation.getEntity()) {
-
-                @Override
-                protected void executeUpdate(OpContext<ClientSession, Object> context, ClientSession session) throws RuntimeException {
-                    InsertOneResult insertOneResult = collection.insertOne(session, entity);
-                    BsonValue insertedId = insertOneResult.getInsertedId();
-                    BeanProperty<T, Object> property = (BeanProperty<T, Object>) persistentEntity.getIdentity().getProperty();
-                    if (property.get(entity) == null) {
-                        entity = updateEntityId(property, entity, insertedId);
-                    }
-                }
-            };
-
-            persistOneSync(clientSession, op, new OperationContext(operation.getAnnotationMetadata(), operation.getRepositoryType(), Dialect.ANSI));
-
-            return op.getEntity();
+    @Override
+    public <T> Iterable<T> persistAll(InsertBatchOperation<T> operation) {
+        try (ClientSession clientSession = mongoClient.startSession()) {
+            MongoDbOperationContext ctx = new MongoDbOperationContext(clientSession, operation.getRepositoryType(), null, operation.getAnnotationMetadata());
+            return persistBatchSync(ctx, operation, runtimeEntityRegistry.getEntity(operation.getRootEntity()), null);
         }
     }
 
     @Override
     public <T> T update(UpdateOperation<T> operation) {
-        return null;
+        try (ClientSession clientSession = mongoClient.startSession()) {
+            MongoDbOperationContext ctx = new MongoDbOperationContext(clientSession, operation.getRepositoryType(), null, operation.getAnnotationMetadata());
+            return updateOneSync(ctx, operation.getEntity(), runtimeEntityRegistry.getEntity(operation.getRootEntity()));
+        }
     }
 
     @Override
-    public Optional<Number> executeUpdate(PreparedQuery<?, Number> preparedQuery) {
-        return Optional.empty();
+    public <T> Iterable<T> updateAll(UpdateBatchOperation<T> operation) {
+        try (ClientSession clientSession = mongoClient.startSession()) {
+            MongoDbOperationContext ctx = new MongoDbOperationContext(clientSession, operation.getRepositoryType(), null, operation.getAnnotationMetadata());
+            return updateBatch(ctx, operation, runtimeEntityRegistry.getEntity(operation.getRootEntity()));
+        }
     }
 
     @Override
     public <T> int delete(DeleteOperation<T> operation) {
-        return 0;
+        try (ClientSession clientSession = mongoClient.startSession()) {
+            MongoDbOperationContext ctx = new MongoDbOperationContext(clientSession, operation.getRepositoryType(), null, operation.getAnnotationMetadata());
+            RuntimePersistentEntity<T> persistentEntity = runtimeEntityRegistry.getEntity(operation.getRootEntity());
+            MongoDbEntityOperation<T> op = createMongoDbDeleteOneOperation(ctx, persistentEntity, operation.getEntity());
+            op.delete();
+            return (int) op.modifiedCount;
+        }
     }
 
     @Override
     public <T> Optional<Number> deleteAll(DeleteBatchOperation<T> operation) {
+        try (ClientSession clientSession = mongoClient.startSession()) {
+            MongoDbOperationContext ctx = new MongoDbOperationContext(clientSession, operation.getRepositoryType(), null, operation.getAnnotationMetadata());
+            RuntimePersistentEntity<T> persistentEntity = runtimeEntityRegistry.getEntity(operation.getRootEntity());
+            MongoDbEntitiesOperation<T> op = createMongoDbDeleteManyOperation(ctx, persistentEntity, operation);
+            op.delete();
+            return Optional.of(op.modifiedCount);
+        }
+    }
+
+
+    @Override
+    public Optional<Number> executeUpdate(PreparedQuery<?, Number> preparedQuery) {
         return Optional.empty();
     }
 
@@ -187,81 +211,209 @@ public class DefaultMongoDbRepositoryOperations extends AbstractRepositoryOperat
         return mongoClient.getDatabase("default");
     }
 
-    abstract class MongoDbOperation<T> extends EntityOperations<T> {
+    @Override
+    public boolean supportsBatch(MongoDbOperationContext mongoDbOperationContext, RuntimePersistentEntity<?> persistentEntity) {
+        return true;
+    }
 
-        protected T entity;
+    @Override
+    public <T> T persistOneSync(MongoDbOperationContext ctx, T value, RuntimePersistentEntity<T> persistentEntity) {
+        MongoDbEntityOperation<T> op = createMongoDbInsertOneOperation(ctx, persistentEntity, value);
+        op.persist();
+        return op.getEntity();
+    }
+
+    @Override
+    public <T> List<T> persistBatchSync(MongoDbOperationContext ctx, Iterable<T> values, RuntimePersistentEntity<T> persistentEntity, Predicate<T> predicate) {
+        MongoDbEntitiesOperation<T> op = createMongoDbInsertManyOperation(ctx, persistentEntity, values);
+        if (predicate != null) {
+            op.veto(predicate);
+        }
+        op.persist();
+        return op.getEntities();
+    }
+
+    @Override
+    public <T> T updateOneSync(MongoDbOperationContext ctx, T value, RuntimePersistentEntity<T> persistentEntity) {
+        MongoDbEntityOperation<T> op = createMongoDbReplaceOneOperation(ctx, persistentEntity, value);
+        op.update();
+        return op.getEntity();
+    }
+
+    private <T> List<T> updateBatch(MongoDbOperationContext ctx, Iterable<T> values, RuntimePersistentEntity<T> persistentEntity) {
+        MongoDbEntitiesOperation<T> op = createMongoDbReplaceManyOperation(ctx, persistentEntity, values);
+        op.update();
+        return op.getEntities();
+    }
+
+    @Override
+    public void persistManyAssociationSync(MongoDbOperationContext ctx, RuntimeAssociation runtimeAssociation, Object value, RuntimePersistentEntity<Object> persistentEntity, Object child, RuntimePersistentEntity<Object> childPersistentEntity) {
+        throw new IllegalStateException();
+    }
+
+    @Override
+    public void persistManyAssociationBatchSync(MongoDbOperationContext ctx, RuntimeAssociation runtimeAssociation, Object value, RuntimePersistentEntity<Object> persistentEntity, Iterable<Object> child, RuntimePersistentEntity<Object> childPersistentEntity) {
+        throw new IllegalStateException();
+    }
+
+    private <T> MongoDbEntityOperation<T> createMongoDbInsertOneOperation(MongoDbOperationContext ctx, RuntimePersistentEntity<T> persistentEntity, T entity) {
+        return new MongoDbEntityOperation<T>(ctx, persistentEntity, entity, true) {
+
+            @Override
+            protected void execute() throws RuntimeException {
+                MongoCollection<T> collection = getCollection(persistentEntity);
+                InsertOneResult insertOneResult = collection.insertOne(ctx.clientSession, entity);
+                BsonValue insertedId = insertOneResult.getInsertedId();
+                BeanProperty<T, Object> property = (BeanProperty<T, Object>) persistentEntity.getIdentity().getProperty();
+                if (property.get(entity) == null) {
+                    entity = updateEntityId(property, entity, insertedId);
+                }
+            }
+        };
+    }
+
+    private <T> MongoDbEntityOperation<T> createMongoDbReplaceOneOperation(MongoDbOperationContext ctx, RuntimePersistentEntity<T> persistentEntity, T entity) {
+        return new MongoDbEntityOperation<T>(ctx, persistentEntity, entity, false) {
+
+            @Override
+            protected void execute() throws RuntimeException {
+                MongoCollection<T> collection = getCollection(persistentEntity);
+                Object id = persistentEntity.getIdentity().getProperty().get(entity);
+                UpdateResult updateResult = collection.replaceOne(ctx.clientSession, Filters.eq(id), entity);
+                modifiedCount = updateResult.getModifiedCount();
+            }
+        };
+    }
+
+    private <T> MongoDbEntitiesOperation<T> createMongoDbReplaceManyOperation(MongoDbOperationContext ctx, RuntimePersistentEntity<T> persistentEntity, Iterable<T> entities) {
+        return new MongoDbEntitiesOperation<T>(ctx, persistentEntity, entities, false) {
+
+            MongoCollection<T> collection = getCollection(persistentEntity);
+
+            @Override
+            protected void execute() throws RuntimeException {
+                for (Data d : entities) {
+                    if (d.vetoed) {
+                        continue;
+                    }
+                    Object id = persistentEntity.getIdentity().getProperty().get(d.entity);
+                    UpdateResult updateResult = collection.replaceOne(ctx.clientSession, Filters.eq(id), d.entity);
+                    modifiedCount += updateResult.getModifiedCount();
+                }
+            }
+        };
+    }
+
+    private <T> MongoDbEntityOperation<T> createMongoDbDeleteOneOperation(MongoDbOperationContext ctx, RuntimePersistentEntity<T> persistentEntity, T entity) {
+        return new MongoDbEntityOperation<T>(ctx, persistentEntity, entity, false) {
+
+            @Override
+            protected void execute() throws RuntimeException {
+                MongoCollection<T> collection = getCollection(persistentEntity);
+                Object id = persistentEntity.getIdentity().getProperty().get(entity);
+                DeleteResult deleteResult = collection.deleteOne(ctx.clientSession, Filters.eq(id));
+                modifiedCount = deleteResult.getDeletedCount();
+            }
+        };
+    }
+
+    private <T> MongoDbEntitiesOperation<T> createMongoDbDeleteManyOperation(MongoDbOperationContext ctx, RuntimePersistentEntity<T> persistentEntity, Iterable<T> entities) {
+        return new MongoDbEntitiesOperation<T>(ctx, persistentEntity, entities, false) {
+
+            @Override
+            protected void execute() throws RuntimeException {
+                BeanProperty<T, ?> idProperty = persistentEntity.getIdentity().getProperty();
+                Bson filter = entities.stream()
+                        .map(d -> idProperty.get(d.entity))
+                        .map(Filters::eq)
+                        .collect(Collectors.collectingAndThen(Collectors.toList(), Filters::or));
+                MongoCollection<T> collection = getCollection(persistentEntity);
+                DeleteResult deleteResult = collection.deleteMany(ctx.clientSession, filter);
+                modifiedCount = deleteResult.getDeletedCount();
+            }
+        };
+    }
+
+    private <T> MongoDbEntitiesOperation<T> createMongoDbInsertManyOperation(MongoDbOperationContext ctx, RuntimePersistentEntity<T> persistentEntity, Iterable<T> entities) {
+        return new MongoDbEntitiesOperation<T>(ctx, persistentEntity, entities, false) {
+
+            @Override
+            protected void execute() throws RuntimeException {
+                MongoCollection<T> collection = getCollection(persistentEntity);
+                InsertManyResult insertManyResult = collection.insertMany(entities.stream().map(d -> d.entity).collect(Collectors.toList()));
+                if (hasGeneratedId) {
+                    Map<Integer, BsonValue> insertedIds = insertManyResult.getInsertedIds();
+                    RuntimePersistentProperty<T> identity = persistentEntity.getIdentity();
+                    BeanProperty<T, Object> IdProperty = (BeanProperty<T, Object>) identity.getProperty();
+                    int index = 0;
+                    for (Data d : entities) {
+                        if (!d.vetoed) {
+                            BsonValue id = insertedIds.get(index);
+                            if (id == null) {
+                                throw new DataAccessException("Failed to generate ID for entity: " + d.entity);
+                            }
+                            d.entity = updateEntityId(IdProperty, d.entity, id);
+                        }
+                        index++;
+                    }
+                }
+            }
+        };
+    }
+
+    abstract class MongoDbEntityOperation<T> extends AbstractEntityOperations<MongoDbOperationContext, T, RuntimeException> {
+
+        protected long modifiedCount;
 
         /**
          * Create a new instance.
          *
+         * @param ctx
          * @param persistentEntity The RuntimePersistentEntity
          * @param entity
          */
-        protected MongoDbOperation(RuntimePersistentEntity<T> persistentEntity, T entity) {
-            super(persistentEntity);
-            this.entity = entity;
-        }
-
-        @Override
-        protected DBOperation getDbOperation() {
-            throw new IllegalStateException();
-        }
-
-        @Override
-        protected String debug() {
-            return "";
-        }
-
-        @Override
-        protected void cascadePre(Relation.Cascade cascadeType, ClientSession connection, OperationContext operationContext) {
-
-        }
-
-        @Override
-        protected void cascadePost(Relation.Cascade cascadeType, ClientSession clientSession, OperationContext operationContext) {
-
+        protected MongoDbEntityOperation(MongoDbOperationContext ctx, RuntimePersistentEntity<T> persistentEntity, T entity, boolean insert) {
+            super(ctx,
+                    DefaultMongoDbRepositoryOperations.this.cascadeOperations,
+                    DefaultMongoDbRepositoryOperations.this.entityEventRegistry,
+                    persistentEntity,
+                    DefaultMongoDbRepositoryOperations.this.conversionService,
+                    entity,
+                    insert);
         }
 
         @Override
         protected void collectAutoPopulatedPreviousValues() {
+        }
+    }
 
+    abstract class MongoDbEntitiesOperation<T> extends AbstractEntitiesOperations<MongoDbOperationContext, T, RuntimeException> {
+
+        protected long modifiedCount;
+
+        protected MongoDbEntitiesOperation(MongoDbOperationContext ctx, RuntimePersistentEntity<T> persistentEntity, Iterable<T> entities, boolean insert) {
+            super(ctx,
+                    DefaultMongoDbRepositoryOperations.this.cascadeOperations,
+                    DefaultMongoDbRepositoryOperations.this.conversionService,
+                    DefaultMongoDbRepositoryOperations.this.entityEventRegistry,
+                    persistentEntity,
+                    entities,
+                    insert);
         }
 
         @Override
-        protected void executeUpdate(OpContext<ClientSession, Object> context, ClientSession session, DBOperation2<Integer, Integer, RuntimeException> fn) throws RuntimeException {
+        protected void collectAutoPopulatedPreviousValues() {
         }
 
-        @Override
-        protected void executeUpdate(OpContext<ClientSession, Object> context, ClientSession connection) throws RuntimeException {
+    }
 
-        }
+    protected static class MongoDbOperationContext extends OperationContext {
 
-        @Override
-        protected void veto(Predicate<T> predicate) {
-        }
+        private final ClientSession clientSession;
 
-        @Override
-        protected boolean triggerPre(Function<EntityEventContext<Object>, Boolean> fn) {
-            final DefaultEntityEventContext<T> event = new DefaultEntityEventContext<>(persistentEntity, entity);
-            boolean vetoed = !fn.apply((EntityEventContext<Object>) event);
-            if (vetoed) {
-                return true;
-            }
-            T newEntity = event.getEntity();
-            if (entity != newEntity) {
-                entity = newEntity;
-            }
-            return false;
-        }
-
-        @Override
-        protected void triggerPost(Consumer<EntityEventContext<Object>> fn) {
-            final DefaultEntityEventContext<T> event = new DefaultEntityEventContext<>(persistentEntity, entity);
-            fn.accept((EntityEventContext<Object>) event);
-        }
-
-        public T getEntity() {
-            return entity;
+        public MongoDbOperationContext(ClientSession clientSession, Class<?> repositoryType, Dialect dialect, AnnotationMetadata annotationMetadata) {
+            super(annotationMetadata, repositoryType, dialect);
+            this.clientSession = clientSession;
         }
     }
 }
