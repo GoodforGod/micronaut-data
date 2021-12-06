@@ -20,7 +20,9 @@ public class MappedPropertyMapper implements TypedAnnotationMapper<io.micronaut.
     @Override
     public List<AnnotationValue<?>> map(AnnotationValue<MappedProperty> annotation, VisitorContext visitorContext) {
         AnnotationValueBuilder<SerdeConfig> builder = AnnotationValue.builder(SerdeConfig.class);
-        annotation.stringValue().ifPresent(property -> builder.member(SerdeConfig.PROPERTY, property));
+        annotation.stringValue().ifPresent(property -> {
+            builder.member(SerdeConfig.PROPERTY, property);
+        });
         return Collections.singletonList(builder.build());
     }
 

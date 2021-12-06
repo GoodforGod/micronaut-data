@@ -28,6 +28,8 @@ dependencies {
 
     testAnnotationProcessor mn.micronaut.graal
     testAnnotationProcessor projects.dataDocumentProcessor
+    testImplementation projects.dataDocumentProcessor
+    testAnnotationProcessor mn.micronaut.inject.java
 
     testCompileOnly mn.micronaut.inject.groovy
     testImplementation 'io.micronaut.rxjava2:micronaut-rxjava2'

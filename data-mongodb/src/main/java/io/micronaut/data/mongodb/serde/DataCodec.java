@@ -40,7 +40,8 @@ public class DataCodec<T> implements Codec<T> {
     @Override
     public T decode(BsonReader reader, DecoderContext decoderContext) {
         try {
-            return deserializer.deserialize(new BsonReaderDecoder(reader), dataSerdeRegistry.newDecoderContext(type), argument);
+            T deserialize = deserializer.deserialize(new BsonReaderDecoder(reader), dataSerdeRegistry.newDecoderContext(type), argument);
+            return deserialize;
         } catch (IOException e) {
             throw new DataAccessException("Cannot deserialize: " + type);
         }

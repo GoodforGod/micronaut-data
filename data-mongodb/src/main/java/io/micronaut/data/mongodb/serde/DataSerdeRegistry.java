@@ -4,12 +4,17 @@ import io.micronaut.context.BeanContext;
 import io.micronaut.context.annotation.Replaces;
 import io.micronaut.core.beans.BeanIntrospection;
 import io.micronaut.core.beans.BeanIntrospector;
+import io.micronaut.core.beans.BeanProperty;
 import io.micronaut.core.type.Argument;
 import io.micronaut.data.annotation.MappedEntity;
+import io.micronaut.data.document.serde.OneRelationDeserializer;
+import io.micronaut.data.document.serde.OneRelationSerializer;
 import io.micronaut.data.model.runtime.RuntimeEntityRegistry;
 import io.micronaut.data.model.runtime.RuntimePersistentEntity;
+import io.micronaut.serde.Decoder;
 import io.micronaut.serde.DefaultSerdeRegistry;
 import io.micronaut.serde.Deserializer;
+import io.micronaut.serde.Encoder;
 import io.micronaut.serde.Serde;
 import io.micronaut.serde.SerdeIntrospections;
 import io.micronaut.serde.Serializer;
@@ -19,6 +24,7 @@ import io.micronaut.serde.serializers.ObjectSerializer;
 import io.micronaut.serde.util.TypeKey;
 import jakarta.inject.Singleton;
 
+import java.io.IOException;
 import java.util.Collection;
 import java.util.Map;
 import java.util.Optional;
@@ -58,6 +64,25 @@ public class DataSerdeRegistry extends DefaultSerdeRegistry {
 
     @Override
     public <T, D extends Deserializer<? extends T>> D findCustomDeserializer(Class<? extends D> deserializerClass) throws SerdeException {
+        if (deserializerClass == OneRelationDeserializer.class) {
+            return (D) new OneRelationDeserializer() {
+
+                @Override
+                public Object deserialize(Decoder decoder, DecoderContext decoderContext, Argument<? super Object> type) throws IOException {
+                    if (decoder.decodeNull()) {
+                        return null;
+                    }
+                    RuntimePersistentEntity entity = runtimeEntityRegistry.getEntity(type.getType());
+                    if (entity.getIdentity() == null) {
+                        throw new SerdeException("Cannot find ID of entity type: " + type);
+                    }
+                    Deserializer<Object> idDeserializer = findDeserializer(entity.getIdentity().getArgument());
+                    Object id = idDeserializer.deserialize(decoder, decoderContext, type);
+
+                    return entity.getIntrospection().instantiate();
+                }
+            };
+        }
         return super.findCustomDeserializer(deserializerClass);
     }
 
@@ -78,6 +103,26 @@ public class DataSerdeRegistry extends DefaultSerdeRegistry {
 
     @Override
     public <T, D extends Serializer<? extends T>> D findCustomSerializer(Class<? extends D> serializerClass) throws SerdeException {
+        if (serializerClass == OneRelationSerializer.class) {
+            return (D) new OneRelationSerializer() {
+
+                @Override
+                public void serialize(Encoder encoder, EncoderContext context, Object value, Argument<? extends Object> type) throws IOException {
+                    RuntimePersistentEntity entity = runtimeEntityRegistry.getEntity(type.getType());
+                    if (entity.getIdentity() == null) {
+                        throw new SerdeException("Cannot find ID of entity type: " + type);
+                    }
+                    BeanProperty property = entity.getIdentity().getProperty();
+                    Object id = property.get(value);
+                    if (id == null) {
+                        encoder.encodeNull();
+                    } else {
+                        Serializer<Object> idSerializer = findSerializer(entity.getIdentity().getArgument());
+                        idSerializer.serialize(encoder, context, id, type);
+                    }
+                }
+            };
+        }
         return super.findCustomSerializer(serializerClass);
     }
 

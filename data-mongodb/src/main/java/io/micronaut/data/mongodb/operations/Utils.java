@@ -19,7 +19,9 @@ import java.util.Date;
 @Internal
 final class Utils {
 
-    static Bson filterById(ConversionService<?> conversionService, RuntimePersistentEntity<?> persistentEntity, Object value) {
+    static Bson filterById(ConversionService<?> conversionService,
+                           RuntimePersistentEntity<?> persistentEntity,
+                           Object value) {
         RuntimePersistentProperty<?> identity = persistentEntity.getIdentity();
         if (identity != null) {
             AnnotationValue<BsonRepresentation> bsonRepresentation = identity.getAnnotationMetadata().getAnnotation(BsonRepresentation.class);
@@ -31,6 +33,7 @@ final class Utils {
                 if (type == String.class) {
                     return Filters.eq(new ObjectId(value.toString()));
                 }
+                return Filters.eq(value);
             }
         }
         throw new IllegalStateException("Cannot determine id!");

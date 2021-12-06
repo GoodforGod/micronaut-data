@@ -25,7 +25,9 @@ import io.micronaut.data.model.runtime.StoredQuery
 import io.micronaut.data.model.runtime.UpdateOperation
 import io.micronaut.data.mongodb.operations.DefaultMongoDbRepositoryOperations
 import io.micronaut.data.mongodb.operations.DefaultReactiveMongoDbRepositoryOperations
-import io.micronaut.data.tck.Customer
+import io.micronaut.data.tck.entities.AuthorBooksDto
+import io.micronaut.data.tck.entities.BookDto
+import io.micronaut.data.tck.entities.Customer
 import io.micronaut.test.extensions.spock.annotation.MicronautTest
 import io.micronaut.test.support.TestPropertyProvider
 import jakarta.inject.Inject
@@ -50,6 +52,47 @@ class BasicSpec extends Specification implements TestPropertyProvider {
 
     @Inject
     MongoClient mongoClient
+
+    @Inject
+    MongoDbBookRepository bookRepository
+
+    @Inject
+    MongoDbAuthorRepository authorRepository
+
+    protected void setupBooks() {
+//        // book without an author
+//        bookRepository.save(new Book(title: "Anonymous", totalPages: 400))
+//
+//        // blank title
+//        bookRepository.save(new Book(title: "", totalPages: 0))
+
+        saveSampleBooks()
+    }
+
+    protected void saveSampleBooks() {
+        bookRepository.saveAuthorBooks([
+                new AuthorBooksDto("Stephen King", Arrays.asList(
+                        new BookDto("The Stand", 1000),
+                        new BookDto("Pet Cemetery", 400)
+                )),
+                new AuthorBooksDto("James Patterson", Arrays.asList(
+                        new BookDto("Along Came a Spider", 300),
+                        new BookDto("Double Cross", 300)
+                )),
+                new AuthorBooksDto("Don Winslow", Arrays.asList(
+                        new BookDto("The Power of the Dog", 600),
+                        new BookDto("The Border", 700)
+                ))])
+    }
+
+    void "add all"() {
+        when:
+            setupBooks()
+
+            def list = bookRepository.findAll().toList()
+        then:
+            list.size() == 8
+    }
 
     void "test insert"() {
         when:
