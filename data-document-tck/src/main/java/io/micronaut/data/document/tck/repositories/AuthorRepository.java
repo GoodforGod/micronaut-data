@@ -1,7 +1,7 @@
-package io.micronaut.data.tck.repositories;
+package io.micronaut.data.document.tck.repositories;
 
+import io.micronaut.data.document.tck.entities.Author;
 import io.micronaut.data.repository.CrudRepository;
-import io.micronaut.data.tck.entities.Author;
 
 public interface AuthorRepository extends CrudRepository<Author, String> {
 }

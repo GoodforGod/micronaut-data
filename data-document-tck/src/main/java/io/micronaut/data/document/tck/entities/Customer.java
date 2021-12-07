@@ -1,4 +1,4 @@
-package io.micronaut.data.tck.entities;
+package io.micronaut.data.document.tck.entities;
 
 import io.micronaut.data.annotation.Id;
 import io.micronaut.data.annotation.MappedEntity;

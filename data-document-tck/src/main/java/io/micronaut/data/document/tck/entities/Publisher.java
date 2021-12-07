@@ -13,22 +13,19 @@
  * See the License for the specific language governing permissions and
  * limitations under the License.
  */
-package io.micronaut.data.tck.entities;
+package io.micronaut.data.document.tck.entities;
 
 import io.micronaut.data.annotation.Id;
 import io.micronaut.data.annotation.MappedEntity;
 import io.micronaut.data.annotation.MappedProperty;
-import io.micronaut.data.annotation.Relation;
 
 @MappedEntity
-public class Page {
+public class Publisher {
     @Id
     @MappedProperty("_id")
     private String id;
-    private long num;
 
-    @Relation(Relation.Kind.MANY_TO_ONE)
-    private Book book;
+    private String zipCode;
 
     public String getId() {
         return id;
@@ -38,19 +35,13 @@ public class Page {
         this.id = id;
     }
 
-    public long getNum() {
-        return num;
+    public String getZipCode() {
+        return zipCode;
     }
 
-    public void setNum(long num) {
-        this.num = num;
-    }
-
-    public Book getBook() {
-        return book;
-    }
-
-    public void setBook(Book book) {
-        this.book = book;
+    public void setZipCode(String zipCode) {
+        this.zipCode = zipCode;
     }
 }
+
+

@@ -1,11 +1,11 @@
-package io.micronaut.data.tck.repositories;
+package io.micronaut.data.document.tck.repositories;
 
 import io.micronaut.data.annotation.Join;
+import io.micronaut.data.document.tck.entities.Author;
+import io.micronaut.data.document.tck.entities.AuthorBooksDto;
+import io.micronaut.data.document.tck.entities.Book;
+import io.micronaut.data.document.tck.entities.BookDto;
 import io.micronaut.data.repository.PageableRepository;
-import io.micronaut.data.tck.entities.Author;
-import io.micronaut.data.tck.entities.AuthorBooksDto;
-import io.micronaut.data.tck.entities.Book;
-import io.micronaut.data.tck.entities.BookDto;
 
 import java.util.ArrayList;
 import java.util.List;

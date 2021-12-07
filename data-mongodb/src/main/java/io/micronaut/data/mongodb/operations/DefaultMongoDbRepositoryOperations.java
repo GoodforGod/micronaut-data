@@ -100,7 +100,11 @@ public class DefaultMongoDbRepositoryOperations extends AbstractRepositoryOperat
 
     @Override
     public <T, R> R findOne(PreparedQuery<T, R> preparedQuery) {
-        return null;
+        try (ClientSession clientSession = mongoClient.startSession()) {
+            Class<T> type = preparedQuery.getRootEntity();
+            RuntimePersistentEntity<T> persistentEntity = runtimeEntityRegistry.getEntity(type);
+            return getCollection(persistentEntity).find(clientSession, type).limit(1).map(v -> (R) v).first();
+        }
     }
 
     @Override

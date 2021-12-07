@@ -1,3 +1,4 @@
+
 /*
  * Copyright 2017-2020 original authors
  *
@@ -13,35 +14,17 @@
  * See the License for the specific language governing permissions and
  * limitations under the License.
  */
-package io.micronaut.data.tck.entities;
+package io.micronaut.data.document.tck.repositories;
 
+import io.micronaut.context.annotation.Parameter;
 import io.micronaut.data.annotation.Id;
-import io.micronaut.data.annotation.MappedEntity;
-import io.micronaut.data.annotation.MappedProperty;
+import io.micronaut.data.document.tck.entities.BasicTypes;
+import io.micronaut.data.repository.CrudRepository;
 
-@MappedEntity
-public class Publisher {
-    @Id
-    @MappedProperty("_id")
-    private String id;
+public interface BasicTypesRepository extends CrudRepository<BasicTypes, String> {
 
-    private String zipCode;
+    void update(@Id String id, @Parameter("byteArray") byte[] byteArray);
 
-    public String getId() {
-        return id;
-    }
+    BasicTypes findByByteArray(@Parameter("byteArray") byte[] byteArray);
 
-    public void setId(String id) {
-        this.id = id;
-    }
-
-    public String getZipCode() {
-        return zipCode;
-    }
-
-    public void setZipCode(String zipCode) {
-        this.zipCode = zipCode;
-    }
 }
-
-
