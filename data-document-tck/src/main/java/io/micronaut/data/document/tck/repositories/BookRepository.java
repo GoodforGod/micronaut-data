@@ -19,7 +19,7 @@ public abstract class BookRepository implements PageableRepository<Book, String>
     }
 
     @Override
-    @Join("author")
+    @Join("author.books")
     public abstract Iterable<Book> findAll();
 
     public void saveAuthorBooks(List<AuthorBooksDto> authorBooksDtos) {

@@ -1,14 +1,18 @@
 package io.micronaut.data.mongodb;
 
+import io.micronaut.data.annotation.Join;
 import io.micronaut.data.document.tck.repositories.AuthorRepository;
 import io.micronaut.data.document.tck.repositories.BookRepository;
 import io.micronaut.data.mongodb.annotation.MongoDbRepository;
+import org.bson.BsonDocument;
 
 @MongoDbRepository
-public abstract class MongoDbBookRepository extends BookRepository {
+public abstract class MongoBookRepository extends BookRepository {
 
-    public MongoDbBookRepository(AuthorRepository authorRepository) {
+    public MongoBookRepository(AuthorRepository authorRepository) {
         super(authorRepository);
     }
 
+    @Join("author.books")
+    public abstract Iterable<BsonDocument> queryAll();
 }

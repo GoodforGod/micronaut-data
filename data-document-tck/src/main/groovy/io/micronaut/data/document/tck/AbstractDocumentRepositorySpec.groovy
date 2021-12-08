@@ -2,7 +2,9 @@ package io.micronaut.data.document.tck
 
 import io.micronaut.context.ApplicationContext
 import io.micronaut.data.document.tck.entities.BasicTypes
+import io.micronaut.data.document.tck.entities.Person
 import io.micronaut.data.document.tck.repositories.BasicTypesRepository
+import io.micronaut.data.document.tck.repositories.PersonRepository
 import spock.lang.AutoCleanup
 import spock.lang.Shared
 import spock.lang.Specification
@@ -11,11 +13,17 @@ abstract class AbstractDocumentRepositorySpec extends Specification {
 
     abstract BasicTypesRepository getBasicTypeRepository()
 
+    abstract PersonRepository getPersonRepository()
+
     abstract Map<String, String> getProperties()
 
     @AutoCleanup
     @Shared
     ApplicationContext context = ApplicationContext.run(properties)
+
+    protected void savePersons(List<String> names) {
+        personRepository.saveAll(names.collect { new Person(name: it) })
+    }
 
     void "test save and retrieve basic types"() {
         when: "we save a new saved"
@@ -57,6 +65,24 @@ abstract class AbstractDocumentRepositorySpec extends Specification {
 //            retrieved.dateCreated == saved.dateCreated
 //            retrieved.dateUpdated == saved.dateUpdated
             retrieved.date == saved.date
+    }
+
+    void "test save one"() {
+        given:
+            savePersons(["Jeff", "James"])
+
+        when:"one is saved"
+            def person = new Person(name: "Fred")
+            personRepository.save(person)
+
+        then:"the instance is persisted"
+            person.id != null
+            personRepository.findById(person.id).isPresent()
+            personRepository.get(person.id).name == 'Fred'
+            personRepository.existsById(person.id)
+            personRepository.count() == 3
+//            personRepository.count("Fred") == 1
+            personRepository.findAll().size() == 3
     }
 
 }

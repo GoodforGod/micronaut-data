@@ -4,5 +4,5 @@ import io.micronaut.data.document.tck.repositories.AuthorRepository;
 import io.micronaut.data.mongodb.annotation.MongoDbRepository;
 
 @MongoDbRepository
-public interface MongoDbAuthorRepository extends AuthorRepository {
+public interface MongoAuthorRepository extends AuthorRepository {
 }

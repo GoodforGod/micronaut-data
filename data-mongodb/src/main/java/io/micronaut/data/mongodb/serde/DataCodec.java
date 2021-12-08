@@ -43,7 +43,7 @@ public class DataCodec<T> implements Codec<T> {
             T deserialize = deserializer.deserialize(new BsonReaderDecoder(reader), dataSerdeRegistry.newDecoderContext(type), argument);
             return deserialize;
         } catch (IOException e) {
-            throw new DataAccessException("Cannot deserialize: " + type);
+            throw new DataAccessException("Cannot deserialize: " + type, e);
         }
     }
 
@@ -52,7 +52,7 @@ public class DataCodec<T> implements Codec<T> {
         try {
             serializer.serialize(new BsonWriterEncoder(writer, false), dataSerdeRegistry.newEncoderContext(type, (RuntimePersistentEntity<Object>) persistentEntity), value, argument);
         } catch (IOException e) {
-            throw new DataAccessException("Cannot serialize: " + value);
+            throw new DataAccessException("Cannot serialize: " + value, e);
         }
     }
 

@@ -7,6 +7,7 @@ import io.micronaut.core.beans.BeanIntrospector;
 import io.micronaut.core.beans.BeanProperty;
 import io.micronaut.core.type.Argument;
 import io.micronaut.data.annotation.MappedEntity;
+import io.micronaut.data.document.serde.ManyRelationSerializer;
 import io.micronaut.data.document.serde.OneRelationDeserializer;
 import io.micronaut.data.document.serde.OneRelationSerializer;
 import io.micronaut.data.model.runtime.RuntimeEntityRegistry;
@@ -18,11 +19,13 @@ import io.micronaut.serde.Encoder;
 import io.micronaut.serde.Serde;
 import io.micronaut.serde.SerdeIntrospections;
 import io.micronaut.serde.Serializer;
+import io.micronaut.serde.bson.BsonWriterEncoder;
 import io.micronaut.serde.deserializers.ObjectDeserializer;
 import io.micronaut.serde.exceptions.SerdeException;
 import io.micronaut.serde.serializers.ObjectSerializer;
 import io.micronaut.serde.util.TypeKey;
 import jakarta.inject.Singleton;
+import org.bson.types.ObjectId;
 
 import java.io.IOException;
 import java.util.Collection;
@@ -117,9 +120,25 @@ public class DataSerdeRegistry extends DefaultSerdeRegistry {
                     if (id == null) {
                         encoder.encodeNull();
                     } else {
-                        Serializer<Object> idSerializer = findSerializer(entity.getIdentity().getArgument());
-                        idSerializer.serialize(encoder, context, id, type);
+                        Encoder en = encoder.encodeObject(type);
+                        en.encodeKey("_id");
+                        if (id instanceof String) {
+                            ((BsonWriterEncoder) encoder).encodeObjectId(new ObjectId((String) id));
+                        } else {
+                            Serializer<Object> idSerializer = findSerializer(entity.getIdentity().getArgument());
+                            idSerializer.serialize(en, context, id, type);
+                        }
+                        en.finishStructure();
                     }
+                }
+            };
+        }
+        if (serializerClass == ManyRelationSerializer.class) {
+            return (D) new ManyRelationSerializer() {
+
+                @Override
+                public void serialize(Encoder encoder, EncoderContext context, Object value, Argument<?> type) throws IOException {
+                    encoder.encodeNull();
                 }
             };
         }

@@ -194,7 +194,7 @@ public class QueryCriteriaMethodMatch extends AbstractCriteriaMethodMatch {
                         resultType = queryResultType;
                     }
                 } else {
-                    throw new MatchFailedException("Query results in a type [" + queryResultType.getName() + "] whilst method returns an incompatible type: " + resultType.getName());
+//                    throw new MatchFailedException("Query results in a type [" + queryResultType.getName() + "] whilst method returns an incompatible type: " + resultType.getName());
                 }
             }
         }

@@ -2,7 +2,7 @@ package io.micronaut.data.document.processor.mapper;
 
 import io.micronaut.core.annotation.AnnotationValue;
 import io.micronaut.data.annotation.Relation;
-import io.micronaut.data.document.serde.OneRelationDeserializer;
+import io.micronaut.data.document.serde.ManyRelationSerializer;
 import io.micronaut.data.document.serde.OneRelationSerializer;
 import io.micronaut.inject.annotation.TypedAnnotationMapper;
 import io.micronaut.inject.visitor.VisitorContext;
@@ -25,17 +25,18 @@ public class MappedRelationMapper implements TypedAnnotationMapper<Relation> {
             return Collections.singletonList(
                     AnnotationValue.builder(SerdeConfig.class)
                             .member(SerdeConfig.SERIALIZER_CLASS, OneRelationSerializer.class)
-                            .member(SerdeConfig.DESERIALIZER_CLASS, OneRelationDeserializer.class)
+//                            .member(SerdeConfig.DESERIALIZER_CLASS, OneRelationDeserializer.class)
                             .build()
             );
-        } else if (kind != Relation.Kind.EMBEDDED) {
-            return Collections.singletonList(
-                    AnnotationValue.builder(SerdeConfig.class)
-                            .member(SerdeConfig.IGNORED, true)
-                            .build()
-            );
+        } else if (kind == Relation.Kind.EMBEDDED) {
+            return Collections.emptyList();
         }
-        return Collections.emptyList();
+        return Collections.singletonList(
+                AnnotationValue.builder(SerdeConfig.class)
+                        .member(SerdeConfig.SERIALIZER_CLASS, ManyRelationSerializer.class)
+//                            .member(SerdeConfig.DESERIALIZER_CLASS, OneRelationDeserializer.class)
+                        .build()
+        );
     }
 
 }

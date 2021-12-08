@@ -20,6 +20,7 @@ import groovy.transform.CompileStatic
 import io.micronaut.core.convert.value.ConvertibleValues
 import io.micronaut.core.type.Argument
 import io.micronaut.data.document.tck.entities.AuthorBooksDto
+import io.micronaut.data.document.tck.entities.Book
 import io.micronaut.data.document.tck.entities.BookDto
 import io.micronaut.data.document.tck.entities.Customer
 import io.micronaut.data.model.runtime.InsertOperation
@@ -54,17 +55,17 @@ class BasicSpec extends Specification implements TestPropertyProvider {
     MongoClient mongoClient
 
     @Inject
-    MongoDbBookRepository bookRepository
+    MongoBookRepository bookRepository
 
     @Inject
-    MongoDbAuthorRepository authorRepository
+    MongoAuthorRepository authorRepository
 
     protected void setupBooks() {
-//        // book without an author
-//        bookRepository.save(new Book(title: "Anonymous", totalPages: 400))
-//
-//        // blank title
-//        bookRepository.save(new Book(title: "", totalPages: 0))
+        // book without an author
+        bookRepository.save(new Book(title: "Anonymous", totalPages: 400))
+
+        // blank title
+        bookRepository.save(new Book(title: "", totalPages: 0))
 
         saveSampleBooks()
     }
@@ -89,9 +90,10 @@ class BasicSpec extends Specification implements TestPropertyProvider {
         when:
             setupBooks()
 
+            def list2 = bookRepository.queryAll().toList()
             def list = bookRepository.findAll().toList()
         then:
-            list.size() == 8
+            list2.size() == 8
     }
 
     void "test insert"() {

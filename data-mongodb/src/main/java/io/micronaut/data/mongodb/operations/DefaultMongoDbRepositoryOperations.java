@@ -6,6 +6,7 @@ import com.mongodb.client.MongoCollection;
 import com.mongodb.client.MongoDatabase;
 import com.mongodb.client.model.Aggregates;
 import com.mongodb.client.model.Filters;
+import com.mongodb.client.model.UnwindOptions;
 import com.mongodb.client.result.DeleteResult;
 import com.mongodb.client.result.InsertManyResult;
 import com.mongodb.client.result.InsertOneResult;
@@ -17,10 +18,13 @@ import io.micronaut.core.annotation.Internal;
 import io.micronaut.core.beans.BeanProperty;
 import io.micronaut.core.convert.ConversionContext;
 import io.micronaut.core.type.Argument;
+import io.micronaut.core.util.StringUtils;
 import io.micronaut.data.annotation.repeatable.JoinSpecifications;
 import io.micronaut.data.exceptions.DataAccessException;
 import io.micronaut.data.model.DataType;
 import io.micronaut.data.model.Page;
+import io.micronaut.data.model.PersistentProperty;
+import io.micronaut.data.model.PersistentPropertyPath;
 import io.micronaut.data.model.query.builder.sql.Dialect;
 import io.micronaut.data.model.runtime.AttributeConverterRegistry;
 import io.micronaut.data.model.runtime.DeleteBatchOperation;
@@ -55,6 +59,7 @@ import java.util.List;
 import java.util.Map;
 import java.util.Optional;
 import java.util.Spliterator;
+import java.util.StringJoiner;
 import java.util.function.Predicate;
 import java.util.stream.Collectors;
 import java.util.stream.Stream;
@@ -94,7 +99,7 @@ public class DefaultMongoDbRepositoryOperations extends AbstractRepositoryOperat
         try (ClientSession clientSession = mongoClient.startSession()) {
             RuntimePersistentEntity<T> persistentEntity = runtimeEntityRegistry.getEntity(type);
             Bson eq = Utils.filterById(conversionService, persistentEntity, id);
-            return getCollection(persistentEntity).find(clientSession, eq, type).first();
+            return getCollection(persistentEntity, type).find(clientSession, eq, type).first();
         }
     }
 
@@ -102,8 +107,9 @@ public class DefaultMongoDbRepositoryOperations extends AbstractRepositoryOperat
     public <T, R> R findOne(PreparedQuery<T, R> preparedQuery) {
         try (ClientSession clientSession = mongoClient.startSession()) {
             Class<T> type = preparedQuery.getRootEntity();
+            Class<R> resultType = preparedQuery.getResultType();
             RuntimePersistentEntity<T> persistentEntity = runtimeEntityRegistry.getEntity(type);
-            return getCollection(persistentEntity).find(clientSession, type).limit(1).map(v -> (R) v).first();
+            return getCollection(persistentEntity, resultType).find(clientSession, type).limit(1).map(v -> (R) v).first();
         }
     }
 
@@ -127,6 +133,7 @@ public class DefaultMongoDbRepositoryOperations extends AbstractRepositoryOperat
         try (ClientSession clientSession = mongoClient.startSession()) {
             AnnotationValue<JoinSpecifications> joins = preparedQuery.getAnnotationMetadata().getAnnotation(JoinSpecifications.class);
             Class<T> type = preparedQuery.getRootEntity();
+            Class<R> resultType = preparedQuery.getResultType();
             RuntimePersistentEntity<T> persistentEntity = runtimeEntityRegistry.getEntity(type);
             List<String> joined = new ArrayList<>();
             if (joins != null) {
@@ -134,13 +141,39 @@ public class DefaultMongoDbRepositoryOperations extends AbstractRepositoryOperat
                     join.stringValue().ifPresent(joined::add);
                 }
             }
-//            for (String join : joined) {
-//                PersistentPropertyPath propertyPath = persistentEntity.getPropertyPath(join);
-//                propertyPath.get
-//            }
             List<Bson> pipeline = new ArrayList<>();
-            pipeline.add(Aggregates.lookup("author", "author", "_id", "author"));
-            Spliterator<R> spliterator = getCollection(persistentEntity).aggregate(clientSession, pipeline, type).map(v -> (R) v).spliterator();
+            for (String join : joined) {
+                StringJoiner fullPath = new StringJoiner(".");
+                String prev = null;
+                for (String path : StringUtils.splitOmitEmptyStrings(join, '.')) {
+                    fullPath.add(path);
+                    String thisPath = fullPath.toString();
+                    PersistentPropertyPath propertyPath = persistentEntity.getPropertyPath(thisPath);
+                    PersistentProperty property = propertyPath.getProperty();
+                    if (!(property instanceof RuntimeAssociation)) {
+                        continue;
+                    }
+                    RuntimeAssociation<Object> runtimeAssociation = (RuntimeAssociation) property;
+                    if (runtimeAssociation.isForeignKey()) {
+                        pipeline.add(Aggregates.lookup(
+                                runtimeAssociation.getAssociatedEntity().getPersistedName(),
+                                (prev == null) ? "_id" : prev + "._id",
+                                runtimeAssociation.getInverseSide().get().getName() + "._id",
+                                thisPath)
+                        );
+                    } else {
+                        pipeline.add(Aggregates.lookup(
+                                runtimeAssociation.getAssociatedEntity().getPersistedName(),
+                                thisPath + "._id",
+                                "_id",
+                                thisPath)
+                        );
+                        pipeline.add(Aggregates.unwind("$" + thisPath, new UnwindOptions().preserveNullAndEmptyArrays(true)));
+                    }
+                    prev = thisPath;
+                }
+            }
+            Spliterator<R> spliterator = getCollection(persistentEntity, resultType).aggregate(clientSession, pipeline, resultType).spliterator();
             return StreamSupport.stream(spliterator, false).collect(Collectors.toList());
         }
     }
@@ -230,8 +263,8 @@ public class DefaultMongoDbRepositoryOperations extends AbstractRepositoryOperat
 
     }
 
-    private <T> MongoCollection<T> getCollection(RuntimePersistentEntity<T> persistentEntity) {
-        return getDatabase().getCollection(persistentEntity.getPersistedName(), persistentEntity.getIntrospection().getBeanType());
+    private <T, R> MongoCollection<R> getCollection(RuntimePersistentEntity<T> persistentEntity, Class<R> resultType) {
+        return getDatabase().getCollection(persistentEntity.getPersistedName(), resultType);
     }
 
     private MongoDatabase getDatabase() {
@@ -288,7 +321,7 @@ public class DefaultMongoDbRepositoryOperations extends AbstractRepositoryOperat
 
             @Override
             protected void execute() throws RuntimeException {
-                MongoCollection<T> collection = getCollection(persistentEntity);
+                MongoCollection<T> collection = getCollection(persistentEntity, persistentEntity.getIntrospection().getBeanType());
                 if (QUERY_LOG.isDebugEnabled()) {
                     QUERY_LOG.debug("Executing Mongo 'insertOne' with entity: {}", entity);
                 }
@@ -307,7 +340,7 @@ public class DefaultMongoDbRepositoryOperations extends AbstractRepositoryOperat
 
             @Override
             protected void execute() throws RuntimeException {
-                MongoCollection<T> collection = getCollection(persistentEntity);
+                MongoCollection<T> collection = getCollection(persistentEntity, persistentEntity.getIntrospection().getBeanType());
                 Object id = persistentEntity.getIdentity().getProperty().get(entity);
                 Bson filter = Utils.filterById(conversionService, persistentEntity, id);
                 if (QUERY_LOG.isDebugEnabled()) {
@@ -333,7 +366,7 @@ public class DefaultMongoDbRepositoryOperations extends AbstractRepositoryOperat
                     if (QUERY_LOG.isDebugEnabled()) {
                         QUERY_LOG.debug("Executing Mongo 'replaceOne' with filter: {}", filter.toBsonDocument().toJson());
                     }
-                    UpdateResult updateResult = getCollection(persistentEntity).replaceOne(ctx.clientSession, filter, d.entity);
+                    UpdateResult updateResult = getCollection(persistentEntity, persistentEntity.getIntrospection().getBeanType()).replaceOne(ctx.clientSession, filter, d.entity);
                     modifiedCount += updateResult.getModifiedCount();
                 }
             }
@@ -345,7 +378,7 @@ public class DefaultMongoDbRepositoryOperations extends AbstractRepositoryOperat
 
             @Override
             protected void execute() throws RuntimeException {
-                MongoCollection<T> collection = getCollection(persistentEntity);
+                MongoCollection<T> collection = getCollection(persistentEntity, persistentEntity.getIntrospection().getBeanType());
                 Object id = persistentEntity.getIdentity().getProperty().get(entity);
                 Bson filter = Utils.filterById(conversionService, persistentEntity, id);
                 if (QUERY_LOG.isDebugEnabled()) {
@@ -370,7 +403,8 @@ public class DefaultMongoDbRepositoryOperations extends AbstractRepositoryOperat
                 if (QUERY_LOG.isDebugEnabled()) {
                     QUERY_LOG.debug("Executing Mongo 'deleteMany' with filter: {}", filter.toBsonDocument().toJson());
                 }
-                DeleteResult deleteResult = getCollection(persistentEntity).deleteMany(ctx.clientSession, filter);
+                DeleteResult deleteResult = getCollection(persistentEntity, persistentEntity.getIntrospection().getBeanType())
+                        .deleteMany(ctx.clientSession, filter);
                 modifiedCount = deleteResult.getDeletedCount();
             }
         };
@@ -385,7 +419,8 @@ public class DefaultMongoDbRepositoryOperations extends AbstractRepositoryOperat
                 if (QUERY_LOG.isDebugEnabled()) {
                     QUERY_LOG.debug("Executing Mongo 'insertMany' with entities: {}", toInsert);
                 }
-                InsertManyResult insertManyResult = getCollection(persistentEntity).insertMany(toInsert);
+                InsertManyResult insertManyResult = getCollection(persistentEntity, persistentEntity.getIntrospection().getBeanType())
+                        .insertMany(toInsert);
                 if (hasGeneratedId) {
                     Map<Integer, BsonValue> insertedIds = insertManyResult.getInsertedIds();
                     RuntimePersistentProperty<T> identity = persistentEntity.getIdentity();
