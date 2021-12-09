@@ -14,6 +14,7 @@ dependencies {
     annotationProcessor mn.micronaut.graal
     annotationProcessor "io.micronaut.docs:micronaut-docs-asciidoc-config-props:$micronautDocsVersion"
     api projects.dataRuntime
+    api projects.dataDocumentModel
 
     implementation libs.mongodb.driver.sync
     implementation libs.mongodb.driver.reactivestreams

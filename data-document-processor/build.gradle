@@ -12,6 +12,6 @@ dependencies {
 	implementation projects.dataProcessor
 	implementation libs.micronaut.serde.processor
 	implementation libs.micronaut.serde.api
-	compileOnly projects.dataModel
+	implementation projects.dataDocumentModel
 	compileOnly mn.micronaut.inject.java
 }

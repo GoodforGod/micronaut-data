@@ -19,9 +19,11 @@ package io.micronaut.data.document.tck.entities;
 import io.micronaut.data.annotation.GeneratedValue;
 import io.micronaut.data.annotation.Id;
 import io.micronaut.data.annotation.MappedEntity;
+import io.micronaut.data.annotation.MappedProperty;
 
 @MappedEntity
 public class Person {
+    @MappedProperty("_id")
     @Id
     @GeneratedValue
     private String id;
