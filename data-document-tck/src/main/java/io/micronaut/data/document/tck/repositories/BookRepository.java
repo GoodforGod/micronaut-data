@@ -22,6 +22,11 @@ public abstract class BookRepository implements PageableRepository<Book, String>
     @Join("author.books")
     public abstract Iterable<Book> findAll();
 
+    @Join("author")
+    public abstract Book findByTitle(String title);
+
+    public abstract int deleteByIdAndAuthorId(String id, String authorId);
+
     public void saveAuthorBooks(List<AuthorBooksDto> authorBooksDtos) {
         List<Author> authors = new ArrayList<>();
         for (AuthorBooksDto dto: authorBooksDtos) {

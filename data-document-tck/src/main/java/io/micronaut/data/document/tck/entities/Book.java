@@ -16,6 +16,7 @@
 package io.micronaut.data.document.tck.entities;
 
 import io.micronaut.data.annotation.DateUpdated;
+import io.micronaut.data.annotation.GeneratedValue;
 import io.micronaut.data.annotation.Id;
 import io.micronaut.data.annotation.MappedEntity;
 import io.micronaut.data.annotation.MappedProperty;
@@ -36,6 +37,7 @@ import java.util.List;
 @MappedEntity
 public class Book {
     @Id
+    @GeneratedValue
     @MappedProperty("_id")
     private String id;
     private String title;

@@ -698,6 +698,20 @@ public abstract class AbstractQueryInterceptor<T, R> implements DataInterceptor<
     }
 
     /**
+     * Get the delete all batch operation for the given context.
+     *
+     * @param context  The context
+     * @param iterable The iterable
+     * @param <E>      The entity type
+     * @return The paged query
+     */
+    @NonNull
+    protected <E> DeleteBatchOperation<E> getDeleteAllatchOperation(@NonNull MethodInvocationContext<T, ?> context) {
+        @SuppressWarnings("unchecked") Class<E> rootEntity = getRequiredRootEntity(context);
+        return new DefaultDeleteAllBatchOperation<>(context, rootEntity);
+    }
+
+    /**
      * Get the delete batch operation for the given context.
      *
      * @param context  The context
@@ -928,11 +942,29 @@ public abstract class AbstractQueryInterceptor<T, R> implements DataInterceptor<
      *
      * @param <E> The entity type
      */
-    private class DefaultDeleteBatchOperation<E> extends DefaultBatchOperation<E> implements DeleteBatchOperation<E> {
+    private class DefaultDeleteAllBatchOperation<E> extends DefaultBatchOperation<E> implements DeleteBatchOperation<E> {
 
-        DefaultDeleteBatchOperation(MethodInvocationContext<?, ?> method, @NonNull Class<E> rootEntity) {
-            this(method, rootEntity, Collections.emptyList());
+        DefaultDeleteAllBatchOperation(MethodInvocationContext<?, ?> method, @NonNull Class<E> rootEntity) {
+            super(method, rootEntity, Collections.emptyList());
         }
+
+        @Override
+        public boolean all() {
+            return true;
+        }
+
+        @Override
+        public List<DeleteOperation<E>> split() {
+            throw new IllegalStateException("Split is not supported for delete all operation!");
+        }
+    }
+
+    /**
+     * Default implementation of {@link DeleteBatchOperation}.
+     *
+     * @param <E> The entity type
+     */
+    private class DefaultDeleteBatchOperation<E> extends DefaultBatchOperation<E> implements DeleteBatchOperation<E> {
 
         DefaultDeleteBatchOperation(MethodInvocationContext<?, ?> method, @NonNull Class<E> rootEntity, Iterable<E> iterable) {
             super(method, rootEntity, iterable);

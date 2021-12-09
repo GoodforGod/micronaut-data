@@ -42,6 +42,7 @@ import java.util.UUID;
 public class BasicTypes {
     @Id
     @GeneratedValue
+    @MappedProperty("_id")
     private String myId;
 
     private int primitiveInteger = 1;

@@ -82,7 +82,11 @@ public class MongoDbQueryBuilder implements QueryBuilder {
             String propertyName = propertyPath.getProperty().getAnnotationMetadata()
                     .stringValue(SerdeConfig.class, SerdeConfig.PROPERTY)
                     .orElse(propertyPath.getProperty().getName());
-            appendPropertyExp(sb, op, propertyName, () -> {
+            StringJoiner sj = new StringJoiner(".");
+            propertyPath.getAssociations().forEach(a -> sj.add(a.getName()));
+            sj.add(propertyName);
+            String path = sj.toString();
+            appendPropertyExp(sb, op, path, () -> {
                 if (value instanceof BindingParameter) {
                     int index = context.pushParameter(
                             (BindingParameter) value,
@@ -133,8 +137,8 @@ public class MongoDbQueryBuilder implements QueryBuilder {
     }
 
     private void appendPropertyExp(StringBuilder sb, String operator, String property, Runnable placeholder) {
-        sb.append("{ ");
-        sb.append(property).append(": ");
+        sb.append("{ '");
+        sb.append(property).append("': ");
         sb.append("{ ");
         sb.append(operator).append(": ");
         placeholder.run();
@@ -314,7 +318,25 @@ public class MongoDbQueryBuilder implements QueryBuilder {
 
     @Override
     public QueryResult buildDelete(AnnotationMetadata annotationMetadata, QueryModel query) {
-        return null;
+        ArgumentUtils.requireNonNull("annotationMetadata", annotationMetadata);
+        ArgumentUtils.requireNonNull("query", query);
+
+        QueryState queryState = new QueryState(query, true, false);
+
+        QueryModel.Junction criteria = query.getCriteria();
+
+        if (!criteria.isEmpty()) {
+            buildWhereClause(annotationMetadata, criteria, queryState);
+        }
+
+        return QueryResult.of(
+                queryState.getFinalQuery(),
+                queryState.getQueryParts(),
+                queryState.getParameterBindings(),
+                queryState.getAdditionalRequiredParameters(),
+                query.getMax(),
+                query.getOffset()
+        );
     }
 
     @Override

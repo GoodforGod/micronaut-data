@@ -15,7 +15,6 @@ import io.micronaut.context.annotation.EachBean;
 import io.micronaut.core.annotation.AnnotationMetadata;
 import io.micronaut.core.annotation.AnnotationValue;
 import io.micronaut.core.annotation.Internal;
-import io.micronaut.core.annotation.Nullable;
 import io.micronaut.core.beans.BeanProperty;
 import io.micronaut.core.beans.BeanWrapper;
 import io.micronaut.core.convert.ConversionContext;
@@ -26,8 +25,10 @@ import io.micronaut.data.annotation.repeatable.JoinSpecifications;
 import io.micronaut.data.exceptions.DataAccessException;
 import io.micronaut.data.model.DataType;
 import io.micronaut.data.model.Page;
+import io.micronaut.data.model.Pageable;
 import io.micronaut.data.model.PersistentProperty;
 import io.micronaut.data.model.PersistentPropertyPath;
+import io.micronaut.data.model.Sort;
 import io.micronaut.data.model.query.builder.sql.Dialect;
 import io.micronaut.data.model.runtime.AttributeConverterRegistry;
 import io.micronaut.data.model.runtime.DeleteBatchOperation;
@@ -52,7 +53,9 @@ import io.micronaut.data.runtime.operations.internal.AbstractSyncEntityOperation
 import io.micronaut.data.runtime.operations.internal.OperationContext;
 import io.micronaut.data.runtime.operations.internal.SyncCascadeOperations;
 import io.micronaut.http.codec.MediaTypeCodec;
+import org.bson.BsonArray;
 import org.bson.BsonDocument;
+import org.bson.BsonDocumentWrapper;
 import org.bson.BsonInt32;
 import org.bson.BsonObjectId;
 import org.bson.BsonValue;
@@ -66,7 +69,7 @@ import java.lang.reflect.Array;
 import java.util.ArrayList;
 import java.util.Collections;
 import java.util.List;
-import java.util.Locale;
+import java.util.ListIterator;
 import java.util.Map;
 import java.util.Optional;
 import java.util.Spliterator;
@@ -83,6 +86,7 @@ public class DefaultMongoDbRepositoryOperations extends AbstractRepositoryOperat
     private static final Logger QUERY_LOG = DataSettings.QUERY_LOG;
     private final MongoClient mongoClient;
     private final SyncCascadeOperations<MongoDbOperationContext> cascadeOperations;
+    private final BsonDocument EMPTY = new BsonDocument();
 
     /**
      * Default constructor.
@@ -120,7 +124,10 @@ public class DefaultMongoDbRepositoryOperations extends AbstractRepositoryOperat
             Class<T> type = preparedQuery.getRootEntity();
             Class<R> resultType = preparedQuery.getResultType();
             RuntimePersistentEntity<T> persistentEntity = runtimeEntityRegistry.getEntity(type);
-            return getCollection(persistentEntity, resultType).find(clientSession, type).limit(1).map(v -> (R) v).first();
+            Bson filter = getFilter(preparedQuery, persistentEntity);
+            return getCollection(persistentEntity, resultType)
+                    .find(clientSession, filter, resultType)
+                    .limit(1).first();
         }
     }
 
@@ -130,46 +137,56 @@ public class DefaultMongoDbRepositoryOperations extends AbstractRepositoryOperat
         RuntimePersistentEntity<T> persistentEntity = runtimeEntityRegistry.getEntity(type);
         Bson filter = getFilter(preparedQuery, persistentEntity);
         try (ClientSession clientSession = mongoClient.startSession()) {
-            boolean b = getCollection(persistentEntity, persistentEntity.getIntrospection().getBeanType())
+            return getCollection(persistentEntity, persistentEntity.getIntrospection().getBeanType())
                     .find(clientSession, type)
                     .limit(1)
                     .filter(filter)
                     .iterator()
                     .hasNext();
-            return b;
         }
     }
 
-    private <T> Bson getFilter(PreparedQuery<T, Boolean> preparedQuery, RuntimePersistentEntity<T> persistentEntity) {
+    private <T> Bson getFilter(PreparedQuery<?, ?> preparedQuery, RuntimePersistentEntity<T> persistentEntity) {
         String query = preparedQuery.getQuery();
+        if (StringUtils.isEmpty(query)) {
+            return EMPTY;
+        }
         BsonDocument bsonDocument = BsonDocument.parse(query);
-        bsonDocument = (BsonDocument) replaceQueryParameters(null, bsonDocument, preparedQuery, persistentEntity);
+        bsonDocument = (BsonDocument) replaceQueryParameters(preparedQuery, persistentEntity, bsonDocument);
         return bsonDocument;
     }
 
-    private <T> BsonValue replaceQueryParameters(@Nullable String key,
-                                                 BsonDocument document,
-                                                 PreparedQuery<?, ?> preparedQuery,
-                                                 RuntimePersistentEntity<T> persistentEntity) {
-        BsonInt32 queryParameterIndex = document.getInt32("$qpidx", null);
-        if (queryParameterIndex != null) {
-            int index = queryParameterIndex.getValue();
-            return getValue(key, index, preparedQuery.getQueryBindings().get(index), preparedQuery, persistentEntity);
-        }
-        for (Map.Entry<String, BsonValue> entry : document.entrySet()) {
-            BsonValue value = entry.getValue();
-            if (value instanceof BsonDocument) {
-                BsonValue newValue = replaceQueryParameters(entry.getKey(), (BsonDocument) value, preparedQuery, persistentEntity);
-                if (newValue != value) {
+    private <T> BsonValue replaceQueryParameters(PreparedQuery<?, ?> preparedQuery, RuntimePersistentEntity<T> persistentEntity, BsonValue value) {
+        if (value instanceof BsonDocument) {
+            BsonDocument bsonDocument = (BsonDocument) value;
+            BsonInt32 queryParameterIndex = bsonDocument.getInt32("$qpidx", null);
+            if (queryParameterIndex != null) {
+                int index = queryParameterIndex.getValue();
+                return getValue(index, preparedQuery.getQueryBindings().get(index), preparedQuery, persistentEntity);
+            }
+
+            for (Map.Entry<String, BsonValue> entry : bsonDocument.entrySet()) {
+                BsonValue bsonValue = entry.getValue();
+                BsonValue newValue = replaceQueryParameters(preparedQuery, persistentEntity, bsonValue);
+                if (bsonValue != newValue) {
                     entry.setValue(newValue);
                 }
             }
+            return bsonDocument;
+        } else if (value instanceof BsonArray) {
+            BsonArray bsonArray = (BsonArray) value;
+            for (ListIterator<BsonValue> iterator = bsonArray.getValues().listIterator(); iterator.hasNext(); ) {
+                BsonValue bsonValue = iterator.next();
+                BsonValue newValue = replaceQueryParameters(preparedQuery, persistentEntity, bsonValue);
+                if (bsonValue != newValue) {
+                    iterator.set(newValue);
+                }
+            }
         }
-        return document;
+        return value;
     }
 
-    private <T> BsonValue getValue(@Nullable String key,
-                                   int index,
+    private <T> BsonValue getValue(int index,
                                    QueryParameterBinding queryParameterBinding,
                                    PreparedQuery<?, ?> preparedQuery,
                                    RuntimePersistentEntity<T> persistentEntity) {
@@ -214,6 +231,13 @@ public class DefaultMongoDbRepositoryOperations extends AbstractRepositoryOperat
             if (value instanceof String) {
                 PersistentPropertyPath pp = getRequiredPropertyPath(queryParameterBinding, persistentEntity);
                 RuntimePersistentProperty<?> persistentProperty = (RuntimePersistentProperty) pp.getProperty();
+                if (persistentProperty instanceof RuntimeAssociation) {
+                    RuntimeAssociation runtimeAssociation = (RuntimeAssociation) persistentProperty;
+                    RuntimePersistentProperty identity = runtimeAssociation.getAssociatedEntity().getIdentity();
+                    if (identity != null && identity.getType() == String.class && identity.isGenerated()) {
+                        return new BsonObjectId(new ObjectId((String) value));
+                    }
+                }
                 if (persistentProperty.getOwner().getIdentity() == persistentProperty && persistentProperty.getType() == String.class && persistentProperty.isGenerated()) {
                     return new BsonObjectId(new ObjectId((String) value));
                 }
@@ -244,19 +268,6 @@ public class DefaultMongoDbRepositoryOperations extends AbstractRepositoryOperat
             throw new IllegalStateException("Cannot find auto populated property: " + String.join(".", propertyPath));
         }
         return pp;
-    }
-
-    private void appendValue(StringBuilder q, Object value) {
-        if (value == null) {
-            q.append("null");
-        } else if (value instanceof Number) {
-            q.append(value);
-        } else if (value instanceof Boolean) {
-            q.append(((Boolean) value).toString().toLowerCase(Locale.ROOT));
-        } else {
-//            q.append('"').append(value).append('"');
-            q.append("{ \"$oid\": \"").append(value).append("\" }");
-        }
     }
 
     List<Object> expandValue(Object value, DataType dataType) {
@@ -312,11 +323,29 @@ public class DefaultMongoDbRepositoryOperations extends AbstractRepositoryOperat
     @Override
     public <T, R> Iterable<R> findAll(PreparedQuery<T, R> preparedQuery) {
         try (ClientSession clientSession = mongoClient.startSession()) {
+            Pageable pageable = preparedQuery.getPageable();
+            int skip = 0;
+            int limit = 0;
+            boolean isSingleResult = false;
+            if (pageable != Pageable.UNPAGED) {
+                skip = (int) pageable.getOffset();
+                limit = pageable.getSize();
+                Sort sort = pageable.getSort();
+                if (sort.isSorted()) {
+//                    query += queryBuilder.buildOrderBy(persistentEntity, sort).getQuery();
+                }
+                if (isSingleResult && pageable.getOffset() > 0) {
+                    pageable = Pageable.from(pageable.getNumber(), 1);
+                }
+//                query += queryBuilder.buildPagination(pageable).getQuery();
+            }
+
             Class<T> type = preparedQuery.getRootEntity();
             Class<R> resultType = preparedQuery.getResultType();
             RuntimePersistentEntity<T> persistentEntity = runtimeEntityRegistry.getEntity(type);
+            Bson filter = getFilter(preparedQuery, persistentEntity);
             if (preparedQuery.isCount()) {
-                long count = getCollection(persistentEntity, BsonDocument.class).countDocuments(clientSession);
+                long count = getCollection(persistentEntity, BsonDocument.class).countDocuments(clientSession, filter);
                 return Collections.singletonList(conversionService.convertRequired(count, resultType));
             }
             AnnotationValue<JoinSpecifications> joins = preparedQuery.getAnnotationMetadata().getAnnotation(JoinSpecifications.class);
@@ -359,7 +388,11 @@ public class DefaultMongoDbRepositoryOperations extends AbstractRepositoryOperat
                 }
             }
             if (pipeline.isEmpty()) {
-                Spliterator<R> spliterator = getCollection(persistentEntity, resultType).find(clientSession, resultType).spliterator();
+                Spliterator<R> spliterator = getCollection(persistentEntity, resultType)
+                        .find(clientSession, filter, resultType)
+                        .skip(skip)
+                        .limit(limit)
+                        .spliterator();
                 return StreamSupport.stream(spliterator, false).collect(Collectors.toList());
             }
             Spliterator<R> spliterator = getCollection(persistentEntity, resultType).aggregate(clientSession, pipeline, resultType).spliterator();
@@ -428,6 +461,13 @@ public class DefaultMongoDbRepositoryOperations extends AbstractRepositoryOperat
     @Override
     public <T> Optional<Number> deleteAll(DeleteBatchOperation<T> operation) {
         try (ClientSession clientSession = mongoClient.startSession()) {
+            if (operation.all()) {
+                RuntimePersistentEntity<T> persistentEntity = runtimeEntityRegistry.getEntity(operation.getRootEntity());
+                long deletedCount = getCollection(persistentEntity, persistentEntity.getIntrospection().getBeanType())
+                        .deleteMany(EMPTY)
+                        .getDeletedCount();
+                return Optional.of(deletedCount);
+            }
             MongoDbOperationContext ctx = new MongoDbOperationContext(clientSession, operation.getRepositoryType(), operation.getAnnotationMetadata());
             RuntimePersistentEntity<T> persistentEntity = runtimeEntityRegistry.getEntity(operation.getRootEntity());
             MongoDbEntitiesOperation<T> op = createMongoDbDeleteManyOperation(ctx, persistentEntity, operation);
@@ -436,10 +476,23 @@ public class DefaultMongoDbRepositoryOperations extends AbstractRepositoryOperat
         }
     }
 
-
     @Override
     public Optional<Number> executeUpdate(PreparedQuery<?, Number> preparedQuery) {
         return Optional.empty();
+    }
+
+    @Override
+    public Optional<Number> executeDelete(PreparedQuery<?, Number> preparedQuery) {
+        try (ClientSession clientSession = mongoClient.startSession()) {
+            RuntimePersistentEntity<?> persistentEntity = runtimeEntityRegistry.getEntity(preparedQuery.getRootEntity());
+            Bson filter = getFilter(preparedQuery, persistentEntity);
+            if (QUERY_LOG.isDebugEnabled()) {
+                QUERY_LOG.debug("Executing Mongo 'deleteMany' with filter: {}", filter.toBsonDocument().toJson());
+            }
+            DeleteResult deleteResult = getCollection(persistentEntity, persistentEntity.getIntrospection().getBeanType())
+                    .deleteMany(clientSession, filter);
+            return Optional.of(deleteResult.getDeletedCount());
+        }
     }
 
     @Override
@@ -555,7 +608,10 @@ public class DefaultMongoDbRepositoryOperations extends AbstractRepositoryOperat
                     if (QUERY_LOG.isDebugEnabled()) {
                         QUERY_LOG.debug("Executing Mongo 'replaceOne' with filter: {}", filter.toBsonDocument().toJson());
                     }
-                    UpdateResult updateResult = getCollection(persistentEntity, persistentEntity.getIntrospection().getBeanType()).replaceOne(ctx.clientSession, filter, d.entity);
+                    BsonDocument bsonDocument = BsonDocumentWrapper.asBsonDocument(d.entity, getDatabase().getCodecRegistry());
+                    bsonDocument.remove("_id");
+                    UpdateResult updateResult = getCollection(persistentEntity, BsonDocument.class)
+                            .replaceOne(ctx.clientSession, filter, bsonDocument);
                     modifiedCount += updateResult.getModifiedCount();
                 }
             }
