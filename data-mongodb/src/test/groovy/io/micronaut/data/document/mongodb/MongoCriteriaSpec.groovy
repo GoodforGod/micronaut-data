@@ -111,6 +111,22 @@ class MongoCriteriaSpec extends Specification {
         where:
             specification << [
                     { root, query, cb ->
+                        cb.between(root.get("enabled"), true, false)
+                    } as Specification,
+                    { root, query, cb ->
+                        def parameter = cb.parameter(Integer)
+                        cb.between(root.get("amount"), parameter, parameter)
+                    } as Specification,
+                    { root, query, cb ->
+                        query.where(root.get("enabled"))
+                        null
+                    } as Specification,
+                    { root, query, cb ->
+                        query.where(root.get("enabled"))
+                        query.orderBy(cb.desc(root.get("amount")), cb.asc(root.get("budget")))
+                        null
+                    } as Specification,
+                    { root, query, cb ->
                         cb.isTrue(root.get("enabled"))
                     } as Specification,
                     { root, query, cb ->
@@ -118,6 +134,10 @@ class MongoCriteriaSpec extends Specification {
                     } as Specification
             ]
             expectedWhereQuery << [
+                    '{ $and: [ { enabled: { $gte: true } }, { enabled: { $lte: false } } ] }',
+                    '{ $and: [ { amount: { $gte: { $qpidx: 0 } } }, { amount: { $lte: { $qpidx: 1 } } } ] }',
+                    '{ enabled: { $eq: true } }',
+                    '{ enabled: { $eq: true } }',
                     '{ enabled: { $eq: true } }',
                     '{ $and: [ { enabled: { $eq: true } }, { enabled: { $eq: true } } ] }',
             ]

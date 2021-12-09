@@ -15,6 +15,7 @@ import io.micronaut.context.annotation.EachBean;
 import io.micronaut.core.annotation.AnnotationMetadata;
 import io.micronaut.core.annotation.AnnotationValue;
 import io.micronaut.core.annotation.Internal;
+import io.micronaut.core.annotation.Nullable;
 import io.micronaut.core.beans.BeanProperty;
 import io.micronaut.core.beans.BeanWrapper;
 import io.micronaut.core.convert.ConversionContext;
@@ -52,8 +53,11 @@ import io.micronaut.data.runtime.operations.internal.OperationContext;
 import io.micronaut.data.runtime.operations.internal.SyncCascadeOperations;
 import io.micronaut.http.codec.MediaTypeCodec;
 import org.bson.BsonDocument;
+import org.bson.BsonInt32;
+import org.bson.BsonObjectId;
 import org.bson.BsonValue;
 import org.bson.conversions.Bson;
+import org.bson.types.ObjectId;
 import org.slf4j.Logger;
 
 import java.io.Serializable;
@@ -61,7 +65,6 @@ import java.lang.annotation.Annotation;
 import java.lang.reflect.Array;
 import java.util.ArrayList;
 import java.util.Collections;
-import java.util.Iterator;
 import java.util.List;
 import java.util.Locale;
 import java.util.Map;
@@ -125,7 +128,7 @@ public class DefaultMongoDbRepositoryOperations extends AbstractRepositoryOperat
     public <T> boolean exists(PreparedQuery<T, Boolean> preparedQuery) {
         Class<T> type = preparedQuery.getRootEntity();
         RuntimePersistentEntity<T> persistentEntity = runtimeEntityRegistry.getEntity(type);
-        BsonDocument filter = getFilter(preparedQuery, persistentEntity);
+        Bson filter = getFilter(preparedQuery, persistentEntity);
         try (ClientSession clientSession = mongoClient.startSession()) {
             boolean b = getCollection(persistentEntity, persistentEntity.getIntrospection().getBeanType())
                     .find(clientSession, type)
@@ -137,74 +140,110 @@ public class DefaultMongoDbRepositoryOperations extends AbstractRepositoryOperat
         }
     }
 
-    private <T> BsonDocument getFilter(PreparedQuery<T, Boolean> preparedQuery, RuntimePersistentEntity<T> persistentEntity) {
-        Object[] parameterArray = preparedQuery.getParameterArray();
-        Argument[] parameterArguments = preparedQuery.getArguments();
-        String[] expandableQueryParts = preparedQuery.getExpandableQueryParts();
-        int index = 1;
-        StringBuilder q = new StringBuilder(expandableQueryParts[0]);
-        for (QueryParameterBinding queryParameterBinding : preparedQuery.getQueryBindings()) {
-            Class<?> parameterConverter = queryParameterBinding.getParameterConverterClass();
-            Object value;
-            if (queryParameterBinding.getParameterIndex() != -1) {
-                value = resolveParameterValue(queryParameterBinding, parameterArray);
-            } else if (queryParameterBinding.isAutoPopulated()) {
-                String[] propertyPath = queryParameterBinding.getRequiredPropertyPath();
-                PersistentPropertyPath pp = persistentEntity.getPropertyPath(propertyPath);
-                if (pp == null) {
-                    throw new IllegalStateException("Cannot find auto populated property: " + String.join(".", propertyPath));
+    private <T> Bson getFilter(PreparedQuery<T, Boolean> preparedQuery, RuntimePersistentEntity<T> persistentEntity) {
+        String query = preparedQuery.getQuery();
+        BsonDocument bsonDocument = BsonDocument.parse(query);
+        bsonDocument = (BsonDocument) replaceQueryParameters(null, bsonDocument, preparedQuery, persistentEntity);
+        return bsonDocument;
+    }
+
+    private <T> BsonValue replaceQueryParameters(@Nullable String key,
+                                                 BsonDocument document,
+                                                 PreparedQuery<?, ?> preparedQuery,
+                                                 RuntimePersistentEntity<T> persistentEntity) {
+        BsonInt32 queryParameterIndex = document.getInt32("$qpidx", null);
+        if (queryParameterIndex != null) {
+            int index = queryParameterIndex.getValue();
+            return getValue(key, index, preparedQuery.getQueryBindings().get(index), preparedQuery, persistentEntity);
+        }
+        for (Map.Entry<String, BsonValue> entry : document.entrySet()) {
+            BsonValue value = entry.getValue();
+            if (value instanceof BsonDocument) {
+                BsonValue newValue = replaceQueryParameters(entry.getKey(), (BsonDocument) value, preparedQuery, persistentEntity);
+                if (newValue != value) {
+                    entry.setValue(newValue);
                 }
-                RuntimePersistentProperty<?> persistentProperty = (RuntimePersistentProperty) pp.getProperty();
-                Object previousValue = null;
-                QueryParameterBinding previousPopulatedValueParameter = queryParameterBinding.getPreviousPopulatedValueParameter();
-                if (previousPopulatedValueParameter != null) {
-                    if (previousPopulatedValueParameter.getParameterIndex() == -1) {
-                        throw new IllegalStateException("Previous value parameter cannot be bind!");
-                    }
-                    previousValue = resolveParameterValue(previousPopulatedValueParameter, parameterArray);
+            }
+        }
+        return document;
+    }
+
+    private <T> BsonValue getValue(@Nullable String key,
+                                   int index,
+                                   QueryParameterBinding queryParameterBinding,
+                                   PreparedQuery<?, ?> preparedQuery,
+                                   RuntimePersistentEntity<T> persistentEntity) {
+        Class<?> parameterConverter = queryParameterBinding.getParameterConverterClass();
+        Object value;
+        if (queryParameterBinding.getParameterIndex() != -1) {
+            value = resolveParameterValue(queryParameterBinding, preparedQuery.getParameterArray());
+        } else if (queryParameterBinding.isAutoPopulated()) {
+            PersistentPropertyPath pp = getRequiredPropertyPath(queryParameterBinding, persistentEntity);
+            RuntimePersistentProperty<?> persistentProperty = (RuntimePersistentProperty) pp.getProperty();
+            Object previousValue = null;
+            QueryParameterBinding previousPopulatedValueParameter = queryParameterBinding.getPreviousPopulatedValueParameter();
+            if (previousPopulatedValueParameter != null) {
+                if (previousPopulatedValueParameter.getParameterIndex() == -1) {
+                    throw new IllegalStateException("Previous value parameter cannot be bind!");
                 }
+                previousValue = resolveParameterValue(previousPopulatedValueParameter, preparedQuery.getParameterArray());
+            }
 //                value = context.getRuntimeEntityRegistry().autoPopulateRuntimeProperty(persistentProperty, previousValue);
 //                value = context.convert(connection, value, persistentProperty);
-                value = null;
-                parameterConverter = null;
-            } else {
-                throw new IllegalStateException("Invalid query [" + "]. Unable to establish parameter value for parameter at position: " + (index + 1));
-            }
-
-            DataType dataType = queryParameterBinding.getDataType();
-            List<Object> values = expandValue(value, dataType);
-            if (values != null && values.isEmpty()) {
-                // Empty collections / array should always set at least one value
-                value = null;
-                values = null;
-            }
-            if (values == null) {
-                if (parameterConverter != null) {
-                    int parameterIndex = queryParameterBinding.getParameterIndex();
-                    Argument<?> argument = parameterIndex > -1 ? parameterArguments[parameterIndex] : null;
-//                    value = context.convert(parameterConverter, connection, value, argument);
-                }
-//                context.setStatementParameter(stmt, index++, dataType, value, dialect);
-                appendValue(q, value);
-            } else {
-                Iterator<Object> iterator = values.iterator();
-                while (iterator.hasNext()) {
-                    if (parameterConverter != null) {
-                        int parameterIndex = queryParameterBinding.getParameterIndex();
-                        Argument<?> argument = parameterIndex > -1 ? parameterArguments[parameterIndex] : null;
-//                        v = context.convert(parameterConverter, connection, v, argument);
-                    }
-                    appendValue(q, iterator.next());
-                    if (iterator.hasNext()) {
-                        q.append(", ");
-                    }
-//                    context.setStatementParameter(stmt, index++, dataType, v, dialect);
-                }
-            }
-            q.append(expandableQueryParts[index++]);
+            value = null;
+            parameterConverter = null;
+        } else {
+            throw new IllegalStateException("Invalid query [" + "]. Unable to establish parameter value for parameter at position: " + (index + 1));
         }
-        BsonDocument filter = BsonDocument.parse(q.toString());
-        return filter;
+
+        DataType dataType = queryParameterBinding.getDataType();
+        List<Object> values = expandValue(value, dataType);
+        if (values != null && values.isEmpty()) {
+            // Empty collections / array should always set at least one value
+            value = null;
+            values = null;
+        }
+        if (values == null) {
+            if (parameterConverter != null) {
+                int parameterIndex = queryParameterBinding.getParameterIndex();
+                Argument<?> argument = parameterIndex > -1 ? preparedQuery.getArguments()[parameterIndex] : null;
+//                    value = context.convert(parameterConverter, connection, value, argument);
+            }
+//                context.setStatementParameter(stmt, index++, dataType, value, dialect);
+//            appendValue(q, value);
+            if (value instanceof String) {
+                PersistentPropertyPath pp = getRequiredPropertyPath(queryParameterBinding, persistentEntity);
+                RuntimePersistentProperty<?> persistentProperty = (RuntimePersistentProperty) pp.getProperty();
+                if (persistentProperty.getOwner().getIdentity() == persistentProperty && persistentProperty.getType() == String.class && persistentProperty.isGenerated()) {
+                    return new BsonObjectId(new ObjectId((String) value));
+                }
+            }
+            return Utils.toBsonValue(conversionService, value);
+        } else {
+            return null;
+//            Iterator<Object> iterator = values.iterator();
+//            while (iterator.hasNext()) {
+//                if (parameterConverter != null) {
+//                    int parameterIndex = queryParameterBinding.getParameterIndex();
+//                    Argument<?> argument = parameterIndex > -1 ? preparedQuery.getArguments()[parameterIndex] : null;
+////                        v = context.convert(parameterConverter, connection, v, argument);
+//                }
+//                appendValue(q, iterator.next());
+//                if (iterator.hasNext()) {
+//                    q.append(", ");
+//                }
+////                    context.setStatementParameter(stmt, index++, dataType, v, dialect);
+//            }
+        }
+    }
+
+    private <T> PersistentPropertyPath getRequiredPropertyPath(QueryParameterBinding queryParameterBinding, RuntimePersistentEntity<T> persistentEntity) {
+        String[] propertyPath = queryParameterBinding.getRequiredPropertyPath();
+        PersistentPropertyPath pp = persistentEntity.getPropertyPath(propertyPath);
+        if (pp == null) {
+            throw new IllegalStateException("Cannot find auto populated property: " + String.join(".", propertyPath));
+        }
+        return pp;
     }
 
     private void appendValue(StringBuilder q, Object value) {

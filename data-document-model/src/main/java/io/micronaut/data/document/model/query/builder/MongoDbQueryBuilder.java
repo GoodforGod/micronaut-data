@@ -48,11 +48,7 @@ public class MongoDbQueryBuilder implements QueryBuilder {
         });
 
         addCriterionHandler(QueryModel.Conjunction.class, (ctx, sb, conjunction) -> handleJunction(ctx, sb, conjunction, "$and"));
-
-        addCriterionHandler(QueryModel.Disjunction.class, (ctx, sb, disjunction) -> {
-            handleJunction(ctx, sb, disjunction, "$or");
-        });
-
+        addCriterionHandler(QueryModel.Disjunction.class, (ctx, sb, disjunction) -> handleJunction(ctx, sb, disjunction, "$or"));
         addCriterionHandler(QueryModel.IsTrue.class, (context, sb, criterion) -> handleCriterion(context, sb, new QueryModel.Equals(criterion.getProperty(), true)));
         addCriterionHandler(QueryModel.IsFalse.class, (context, sb, criterion) -> handleCriterion(context, sb, new QueryModel.Equals(criterion.getProperty(), false)));
         addCriterionHandler(QueryModel.Equals.class, propertyOperatorExpression("$eq"));
@@ -71,6 +67,12 @@ public class MongoDbQueryBuilder implements QueryBuilder {
         addCriterionHandler(QueryModel.LessThanEqualsProperty.class, comparison("$lte"));
         addCriterionHandler(QueryModel.EqualsProperty.class, comparison("$eq"));
         addCriterionHandler(QueryModel.NotEqualsProperty.class, comparison("$ne"));
+        addCriterionHandler(QueryModel.Between.class, (context, sb, criterion) -> {
+            QueryModel.Conjunction conjunction = new QueryModel.Conjunction();
+            conjunction.add(new QueryModel.GreaterThanEquals(criterion.getProperty(), criterion.getFrom()));
+            conjunction.add(new QueryModel.LessThanEquals(criterion.getProperty(), criterion.getTo()));
+            handleCriterion(context, sb, conjunction);
+        });
     }
 
     private <T extends QueryModel.PropertyCriterion> CriterionHandler<T> propertyOperatorExpression(String op) {
@@ -80,13 +82,13 @@ public class MongoDbQueryBuilder implements QueryBuilder {
             String propertyName = propertyPath.getProperty().getAnnotationMetadata()
                     .stringValue(SerdeConfig.class, SerdeConfig.PROPERTY)
                     .orElse(propertyPath.getProperty().getName());
-            System.out.println(context.getPersistentEntity().getName() + " " + propertyName + " " + propertyPath.getProperty().getAnnotationMetadata().getAnnotationNames());
             appendPropertyExp(sb, op, propertyName, () -> {
                 if (value instanceof BindingParameter) {
-                    context.pushParameter(
+                    int index = context.pushParameter(
                             (BindingParameter) value,
                             newBindingContext(propertyPath.propertyPath)
                     );
+                    appendQueryParameterAtIndex(sb, index);
                 } else {
                     sb.append(asLiteral(value));
                 }
@@ -118,6 +120,10 @@ public class MongoDbQueryBuilder implements QueryBuilder {
         return "'" + value + "'";
     }
 
+    private void appendQueryParameterAtIndex(StringBuilder sb, int index) {
+        sb.append("{ $qpidx: ").append(index)
+                .append(" }");
+    }
 
     private void append(StringBuilder sb, String property, Consumer<StringBuilder> consumer) {
         sb.append("{ ");
@@ -336,15 +342,13 @@ public class MongoDbQueryBuilder implements QueryBuilder {
                                                               @Nullable PersistentPropertyPath persistentPropertyPath) {
         return BindingParameter.BindingContext.create()
                 .incomingMethodParameterProperty(ref)
-                .outgoingQueryParameterProperty(persistentPropertyPath)
-                .expandable();
+                .outgoingQueryParameterProperty(persistentPropertyPath);
     }
 
     private BindingParameter.BindingContext newBindingContext(@Nullable PersistentPropertyPath ref) {
         return BindingParameter.BindingContext.create()
                 .incomingMethodParameterProperty(ref)
-                .outgoingQueryParameterProperty(ref)
-                .expandable();
+                .outgoingQueryParameterProperty(ref);
     }
 
     protected Placeholder formatParameter(int index) {
@@ -380,8 +384,8 @@ public class MongoDbQueryBuilder implements QueryBuilder {
 
         QueryPropertyPath getRequiredProperty(String name, Class<?> criterionClazz);
 
-        default void pushParameter(@NotNull BindingParameter bindingParameter, @NotNull BindingParameter.BindingContext bindingContext) {
-            getQueryState().pushParameter(bindingParameter, bindingContext);
+        default int pushParameter(@NotNull BindingParameter bindingParameter, @NotNull BindingParameter.BindingContext bindingContext) {
+            return getQueryState().pushParameter(bindingParameter, bindingContext);
         }
 
         default QueryPropertyPath getRequiredProperty(QueryModel.PropertyNameCriterion propertyCriterion) {
@@ -401,7 +405,6 @@ public class MongoDbQueryBuilder implements QueryBuilder {
         private final Map<String, String> additionalRequiredParameters = new LinkedHashMap<>();
         private final List<QueryParameterBinding> parameterBindings;
         private final StringBuilder query = new StringBuilder();
-        private final List<String> queryParts = new ArrayList<>();
         private final boolean allowJoins;
         private final QueryModel queryObject;
         private final boolean escape;
@@ -444,25 +447,11 @@ public class MongoDbQueryBuilder implements QueryBuilder {
 //        }
 
         public String getFinalQuery() {
-            if (query.length() > 0) {
-                queryParts.add(query.toString());
-                query.setLength(0);
-            }
-            if (queryParts.isEmpty()) {
-                return "";
-            }
-            StringBuilder sb = new StringBuilder(queryParts.get(0));
-            int i = 1;
-            for (int k = 1; k < queryParts.size(); k++) {
-                Placeholder placeholder = formatParameter(i++);
-                sb.append(placeholder.name);
-                sb.append(queryParts.get(k));
-            }
-            return sb.toString();
+            return query.toString();
         }
 
         public List<String> getQueryParts() {
-            return queryParts;
+            return Collections.emptyList();
         }
 
         /**
@@ -484,15 +473,6 @@ public class MongoDbQueryBuilder implements QueryBuilder {
          */
         public QueryModel getQueryModel() {
             return queryObject;
-        }
-
-        /**
-         * Constructs a new parameter placeholder.
-         *
-         * @return The parameter
-         */
-        private Placeholder newParameter() {
-            return formatParameter(position.incrementAndGet());
         }
 
 //        /**
@@ -575,22 +555,19 @@ public class MongoDbQueryBuilder implements QueryBuilder {
         }
 
         @Override
-        public void pushParameter(@NotNull BindingParameter bindingParameter, @NotNull BindingParameter.BindingContext bindingContext) {
-            Placeholder placeholder = newParameter();
-            bindingContext = bindingContext
-                    .index(position.get() + 1)
-                    .name(placeholder.getKey());
+        public int pushParameter(@NotNull BindingParameter bindingParameter, @NotNull BindingParameter.BindingContext bindingContext) {
+            int index = position.getAndIncrement();
+            bindingContext = bindingContext.index(index);
             parameterBindings.add(
                     bindingParameter.bind(bindingContext)
             );
-            queryParts.add(query.toString());
-            query.setLength(0);
+            return index;
         }
     }
 
     private interface PropertyParameterCreator {
 
-        void pushParameter(@NotNull BindingParameter bindingParameter,
+        int pushParameter(@NotNull BindingParameter bindingParameter,
                            @NotNull BindingParameter.BindingContext bindingContext);
 
     }

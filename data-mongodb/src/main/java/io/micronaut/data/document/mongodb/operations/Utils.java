@@ -39,6 +39,13 @@ final class Utils {
         throw new IllegalStateException("Cannot determine id!");
     }
 
+    static BsonValue toBsonValue(ConversionService<?> conversionService, Object value) {
+        if (value instanceof String) {
+            return toBsonValue(conversionService, BsonType.STRING, value);
+        }
+        throw new IllegalStateException("Not implemented for: " + value);
+    }
+
     static BsonValue toBsonValue(ConversionService<?> conversionService, BsonType bsonType, Object value) {
         switch (bsonType) {
             case STRING:
